@@ -3,6 +3,14 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
+.env.*
+!.env.example
 data/
 dist/
 *.egg-info/
+*.key
+*.pem
+*.crt
+auth.json
+*.sqlite
+*.sqlite3
