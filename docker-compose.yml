@@ -1,0 +1,11 @@
+services:
+  guiltyspark:
+    build: .
+    container_name: guiltyspark
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+      # Mount a local checkout here when you are ready for Codex-assisted fix plans.
+      # - /srv/homelab:/workspace
