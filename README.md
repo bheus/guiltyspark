@@ -39,7 +39,10 @@ For a local dry run:
 
 ```bash
 uv sync --dev --no-editable
-uv run --no-editable guiltyspark once
+GUILTYSPARK_STATE_PATH=data/local.sqlite3 \
+GUILTYSPARK_FINDINGS_PATH=data/local-findings.jsonl \
+GUILTYSPARK_RUNBOOK_PATH=knowledge/homelab-runbook.md \
+uv run --env-file .env --no-editable guiltyspark once
 ```
 
 Run tests locally with:
@@ -55,7 +58,7 @@ All settings are environment variables. The most important ones are:
 | Variable | Purpose |
 | --- | --- |
 | `LOKI_URL` | Base URL for Loki, for example `http://loki:3100`. |
-| `LOKI_QUERY` | LogQL query to monitor, for example `{job=~".+"}`. |
+| `LOKI_QUERY` | LogQL query to monitor, for example `'{job=~".+"}'`. |
 | `CODEX_HOME` | Persistent Codex auth/config directory. Defaults to `/data/codex` in Docker. |
 | `GUILTYSPARK_INTERVAL_SECONDS` | Poll interval for daemon mode. |
 | `GUILTYSPARK_LOOKBACK_SECONDS` | Initial lookback if no cursor exists. |

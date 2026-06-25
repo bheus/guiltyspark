@@ -22,7 +22,7 @@ Edit `.env`:
 
 ```env
 LOKI_URL=http://loki:3100
-LOKI_QUERY={job=~".+"}
+LOKI_QUERY='{job=~".+"}'
 CODEX_HOME=/data/codex
 GUILTYSPARK_NOTIFY_WEBHOOK_URL=
 ```

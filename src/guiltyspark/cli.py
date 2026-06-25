@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from urllib.error import URLError
 
 from guiltyspark.config import Settings
 from guiltyspark.loki import LokiClient
@@ -21,7 +22,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return doctor(settings)
     if args.command == "once":
-        summary = asyncio.run(Monitor(settings).run_once())
+        try:
+            summary = asyncio.run(Monitor(settings).run_once())
+        except URLError as exc:
+            print(
+                f"loki_error={exc.reason} loki_url={settings.loki_url} "
+                "hint='set LOKI_URL or run with uv run --env-file .env'",
+                file=sys.stderr,
+            )
+            return 1
         print(
             f"events={summary.events} incidents={summary.incidents} "
             f"new_findings={summary.findings}"
