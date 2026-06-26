@@ -5,6 +5,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _load_env_files() -> None:
+    original_keys = set(os.environ)
+    for path in (Path(".env"), Path(".env.local")):
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            raw = line.strip()
+            if not raw or raw.startswith("#") or "=" not in raw:
+                continue
+            key, value = raw.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key or key in original_keys:
+                continue
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            os.environ[key] = value
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -43,6 +62,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        _load_env_files()
         pr_mode = os.getenv("GUILTYSPARK_PR_MODE", "off").strip().lower()
         if pr_mode not in {"off", "plan", "branch"}:
             raise ValueError("GUILTYSPARK_PR_MODE must be one of: off, plan, branch")

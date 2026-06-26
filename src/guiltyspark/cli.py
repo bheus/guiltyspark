@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         except URLError as exc:
             print(
                 f"loki_error={exc.reason} loki_url={settings.loki_url} "
-                "hint='set LOKI_URL or run with uv run --env-file .env'",
+                "hint='check LOKI_URL, .env.local, and Loki reachability'",
                 file=sys.stderr,
             )
             return 1

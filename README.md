@@ -39,10 +39,8 @@ For a local dry run:
 
 ```bash
 uv sync --dev --no-editable
-GUILTYSPARK_STATE_PATH=data/local.sqlite3 \
-GUILTYSPARK_FINDINGS_PATH=data/local-findings.jsonl \
-GUILTYSPARK_RUNBOOK_PATH=knowledge/homelab-runbook.md \
-uv run --env-file .env --no-editable guiltyspark once
+cp .env.local.example .env.local
+uv run --no-editable --reinstall-package guiltyspark guiltyspark once
 ```
 
 Run tests locally with:
