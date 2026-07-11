@@ -49,3 +49,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual(settings.loki_url, "http://loki:3100")
         self.assertEqual(settings.loki_query, '{job=~".+"}')
         self.assertEqual(settings.state_path, Path("data/local.sqlite3"))
+
+    def test_doctor_queries_a_recent_loki_window(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = Settings(
+                loki_url="http://loki:3100",
+                loki_query="{job=~\".+\"}",
+                loki_limit=100,
+                interval_seconds=60,
+                lookback_seconds=60,
+                state_path=root / "state.sqlite3",
+                findings_path=root / "findings.jsonl",
+                min_events=1,
+                max_incidents_per_run=1,
+                model=None,
+                runbook_path=None,
+                notify_webhook_url=None,
+                codex_workdir=root,
+                codex_home=root,
+                codex_path="codex",
+                codex_timeout_seconds=30,
+                pr_mode="off",
+            )
+            with patch("guiltyspark.cli.time.time_ns", return_value=100_000_000_000):
+                with patch("guiltyspark.cli.LokiClient") as client:
+                    self.assertEqual(cli.doctor(settings), 0)
+
+            client.return_value.query_range.assert_called_once_with(
+                settings.loki_query,
+                99_000_000_000,
+                100_000_000_000,
+                1,
+            )

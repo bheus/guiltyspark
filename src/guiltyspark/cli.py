@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 from urllib.error import URLError
@@ -120,13 +121,13 @@ def doctor(settings: Settings, targets: list[Target] | None = None) -> int:
     ] or [("default", settings.loki_url, settings.loki_query)]
     for target_id, loki_url, loki_query in checks:
         try:
-            now = 1_000_000_000
+            now = time.time_ns()
             LokiClient(
                 loki_url,
                 bearer_token=settings.loki_bearer_token,
                 basic_auth=settings.loki_basic_auth,
                 timeout_seconds=5,
-            ).query_range(loki_query, 0, now, 1)
+            ).query_range(loki_query, now - 1_000_000_000, now, 1)
             print(f"target={target_id} loki_reachable=true")
         except Exception as exc:
             print(f"target={target_id} loki_reachable=false error={exc}")

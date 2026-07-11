@@ -134,7 +134,7 @@ draft-PR exercise.
 
 Push conventional commits to `main`. GitHub Actions tests the project, creates a semantic
 release, builds a native `linux/arm64` image, publishes versioned and `latest` tags to GHCR,
-then triggers the configured Portainer stack webhook. See
+then pins the released image on `main` for Portainer to poll. See
 [`deploy/appl-pi.md`](deploy/appl-pi.md) for one-time setup and secrets.
 
 ## Commands

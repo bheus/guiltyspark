@@ -116,8 +116,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trigger Portainer redeploy
-        if: steps.release.outputs.released == 'true' && env.PORTAINER_WEBHOOK != ''
-        env:
-          PORTAINER_WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK }}
-        run: curl -fsSL -X POST "$PORTAINER_WEBHOOK"
+      - name: Pin released image for Portainer polling
+        if: steps.release.outputs.released == 'true'
+        run: |
+          # Commit the exact image only after GHCR has it. Portainer polls main
+          # and therefore cannot redeploy before the released image exists.
+          sed -i -E "s#ghcr\\.io/bheus/guiltyspark:[^}[:space:]]+#ghcr.io/bheus/guiltyspark:${{ steps.version.outputs.version }}#" docker-compose.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.yml
+          git commit -m "chore(deploy): v${{ steps.version.outputs.version }} [skip ci]"
+          git push origin HEAD:refs/heads/main

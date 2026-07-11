@@ -2,7 +2,8 @@
 
 GuiltySpark uses the same GitOps shape as the other apple-pi services: GitHub
 Actions tests and releases the code, builds a native `linux/arm64` image, pushes
-it to GHCR, and calls a Portainer stack webhook. The Pi only pulls the image.
+it to GHCR, then pins that finished image in Compose on `main`. Portainer polls
+`main`, and the Pi only pulls an image that already exists.
 
 ## Release Flow
 
@@ -11,8 +12,8 @@ conventional commit merged to main
   -> GitHub Actions runs tests and builds the package
   -> semantic-release creates a version and GitHub tag
   -> CI pushes ghcr.io/bheus/guiltyspark:<version> and :latest
-  -> CI calls the Portainer webhook
-  -> Portainer pulls :latest and recreates the service
+  -> CI pins <version> in Compose and commits chore(deploy) to main
+  -> Portainer polling detects the Compose change and recreates the service
 ```
 
 Only `feat:` commits create minor releases; `fix:` and `perf:` create patch
@@ -25,7 +26,7 @@ Create a Git-backed Portainer stack with:
 - Repository: `https://github.com/bheus/guiltyspark`
 - Reference: `refs/heads/main`
 - Compose path: `docker-compose.yml`
-- Automatic updates: webhook
+- Automatic updates: Git polling, recommended interval 5 minutes
 
 Set these stack environment variables:
 
@@ -49,9 +50,10 @@ directories or bind-mounted configuration files are required.
 For GHCR pulls, either make `ghcr.io/bheus/guiltyspark` public or configure a
 Portainer registry credential with `read:packages` access.
 
-Enable the stack webhook in Portainer and save its URL as the GitHub repository
-secret `PORTAINER_WEBHOOK`. The release job calls it only after the new arm64
-image has been pushed successfully.
+Do not enable a stack webhook or expose Portainer publicly. CI changes the Compose
+image tag on `main` only after the versioned image exists in GHCR, so ordinary
+Portainer Git polling is deterministic. The generated `chore(deploy)` commit is
+automation-owned and marked `[skip ci]`, preventing a release loop.
 
 ## Codex Authentication
 
@@ -89,5 +91,5 @@ ssh bheussler@apple-pi.lan \
 ```
 
 Findings and workflow state live in the `guiltyspark-data` volume. Roll back by
-pinning the Compose image to an earlier published version tag and redeploying the
-Portainer stack.
+temporarily setting `GUILTYSPARK_IMAGE` in Portainer to an earlier published
+version tag and redeploying the stack.
