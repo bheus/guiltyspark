@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from dataclasses import dataclass
@@ -75,9 +76,22 @@ def load_targets(path: Path) -> list[Target]:
     with path.open("rb") as handle:
         payload = tomllib.load(handle)
 
+    return _targets_from_payload(payload, str(path))
+
+
+def load_targets_json(value: str) -> list[Target]:
+    payload = json.loads(value)
+    if isinstance(payload, list):
+        payload = {"targets": payload}
+    if not isinstance(payload, dict):
+        raise ValueError("GUILTYSPARK_TARGETS_JSON must be a JSON list or object")
+    return _targets_from_payload(payload, "GUILTYSPARK_TARGETS_JSON")
+
+
+def _targets_from_payload(payload: dict[str, Any], source: str) -> list[Target]:
     raw_targets = payload.get("targets")
     if not isinstance(raw_targets, list) or not raw_targets:
-        raise ValueError(f"{path} must contain at least one [[targets]] entry")
+        raise ValueError(f"{source} must contain at least one target")
 
     targets = [Target.from_dict(item) for item in raw_targets]
     ids = [target.id for target in targets]

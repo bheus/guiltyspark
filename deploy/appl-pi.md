@@ -18,18 +18,6 @@ conventional commit merged to main
 Only `feat:` commits create minor releases; `fix:` and `perf:` create patch
 releases. Other conventional commit types are tested but do not publish an image.
 
-## One-Time Host Configuration
-
-Create the configuration directory and target file on apple-pi:
-
-```bash
-ssh bheussler@apple-pi.lan 'mkdir -p /home/bheussler/guiltyspark'
-scp targets.example.toml bheussler@apple-pi.lan:/home/bheussler/guiltyspark/targets.toml
-```
-
-Edit that file for the services GuiltySpark should watch. It contains repository
-names, Loki queries, test commands, and patch policy, but no credentials.
-
 ## Portainer Stack
 
 Create a Git-backed Portainer stack with:
@@ -42,13 +30,17 @@ Create a Git-backed Portainer stack with:
 Set these stack environment variables:
 
 ```text
-GUILTYSPARK_TARGETS_FILE=/home/bheussler/guiltyspark/targets.toml
+GUILTYSPARK_TARGETS_JSON=[{"id":"inventory-service","loki_url":"http://loki:3100","loki_query":"{container=~\"inventory-(api|worker)\"}","github_repo":"example-org/inventory-service","base_branch":"main","mode":"observe","test_commands":["pytest -q"],"allowed_paths":["src","tests"],"max_changed_files":8}]
 GITHUB_TOKEN=<token with repository contents and pull-request write access>
 ```
 
-The Compose stack creates the persistent `guiltyspark-data` volume for SQLite,
-findings, remediation state, and Codex authentication. The target file is mounted
-read-only from the host.
+Add Loki credentials, notification settings, or polling overrides as additional
+stack variables when needed. `GUILTYSPARK_TARGETS_JSON` accepts multiple target
+objects in the same JSON array.
+
+The Compose stack automatically creates the persistent `guiltyspark-data` volume
+for SQLite, findings, remediation state, and Codex authentication. No host
+directories or bind-mounted configuration files are required.
 
 For GHCR pulls, either make `ghcr.io/bheus/guiltyspark` public or configure a
 Portainer registry credential with `read:packages` access.

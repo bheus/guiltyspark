@@ -32,7 +32,7 @@ The core loop is intentionally simple:
 
 ```bash
 cp .env.example .env
-cp targets.example.toml targets.local.toml
+# Set GUILTYSPARK_TARGETS_JSON in .env or in Portainer.
 docker compose pull
 docker compose run --rm guiltyspark codex login --device-auth
 docker compose up
@@ -78,6 +78,7 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
 | `GUILTYSPARK_PR_MODE` | `off`, `plan`, or `branch`. The scaffold defaults to `off`. |
 | `GUILTYSPARK_TARGETS_PATH` | Optional TOML file mapping Loki queries to GitHub repositories. |
+| `GUILTYSPARK_TARGETS_JSON` | JSON target list, intended for Portainer stack configuration. |
 | `GUILTYSPARK_REMEDIATION_ROOT` | Parent directory for short-lived isolated clones. |
 | `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
 
@@ -105,8 +106,10 @@ Target modes are deliberately progressive:
 - `fix`: clone, edit, enforce policy, and validate; never push.
 - `draft-pr`: perform the same checks, then push a GuiltySpark branch and open a draft PR.
 
-Set `GUILTYSPARK_TARGETS_PATH=/config/targets.toml`. For private repositories and
-`draft-pr` mode, provide a token through the environment variable named by
+Production can supply the same structure as a JSON list through
+`GUILTYSPARK_TARGETS_JSON`; this is the preferred Portainer configuration path and
+takes precedence over the local TOML file. For private repositories and `draft-pr`
+mode, provide a token through the environment variable named by
 `GUILTYSPARK_GITHUB_TOKEN_ENV`. GuiltySpark injects it only into controller-owned Git
 and GitHub requests; Codex does not receive it.
 

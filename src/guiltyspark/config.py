@@ -58,6 +58,7 @@ class Settings:
     codex_timeout_seconds: int
     pr_mode: str
     targets_path: Path | None = None
+    targets_json: str | None = None
     remediation_root: Path = Path("data/remediation")
     github_token_env: str = "GITHUB_TOKEN"
     github_api_url: str = "https://api.github.com"
@@ -94,6 +95,7 @@ class Settings:
                 if (value := os.getenv("GUILTYSPARK_TARGETS_PATH", "").strip())
                 else None
             ),
+            targets_json=os.getenv("GUILTYSPARK_TARGETS_JSON") or None,
             remediation_root=Path(
                 os.getenv("GUILTYSPARK_REMEDIATION_ROOT", "data/remediation")
             ),

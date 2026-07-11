@@ -11,7 +11,7 @@ services:
       - GUILTYSPARK_STATE_PATH=/data/guiltyspark.sqlite3
       - GUILTYSPARK_FINDINGS_PATH=/data/findings.jsonl
       - GUILTYSPARK_REMEDIATION_ROOT=/data/remediation
-      - GUILTYSPARK_TARGETS_PATH=/config/targets.toml
+      - GUILTYSPARK_TARGETS_JSON=${GUILTYSPARK_TARGETS_JSON:-}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - LOKI_BEARER_TOKEN=${LOKI_BEARER_TOKEN:-}
       - LOKI_BASIC_AUTH=${LOKI_BASIC_AUTH:-}
@@ -23,7 +23,6 @@ services:
       - GUILTYSPARK_MAX_INCIDENTS_PER_RUN=${GUILTYSPARK_MAX_INCIDENTS_PER_RUN:-8}
     volumes:
       - guiltyspark-data:/data
-      - ${GUILTYSPARK_TARGETS_FILE:-./targets.local.toml}:/config/targets.toml:ro
     healthcheck:
       test: ["CMD", "guiltyspark", "--help"]
       interval: 5m

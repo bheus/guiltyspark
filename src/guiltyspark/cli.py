@@ -11,7 +11,7 @@ from guiltyspark.config import Settings
 from guiltyspark.loki import LokiClient
 from guiltyspark.monitor import FleetMonitor, Monitor, RunSummary
 from guiltyspark.remediation import Remediator, load_replay_case
-from guiltyspark.targets import Target, load_targets
+from guiltyspark.targets import Target, load_targets, load_targets_json
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,7 +32,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings.from_env()
-    targets = load_targets(settings.targets_path) if settings.targets_path else []
+    if settings.targets_json:
+        targets = load_targets_json(settings.targets_json)
+    elif settings.targets_path:
+        targets = load_targets(settings.targets_path)
+    else:
+        targets = []
     if args.command == "doctor":
         return doctor(settings, targets)
     if args.command == "replay":
@@ -107,6 +112,7 @@ def doctor(settings: Settings, targets: list[Target] | None = None) -> int:
     print(f"codex_workdir={settings.codex_workdir}")
     print(f"pr_mode={settings.pr_mode}")
     print(f"targets_path={settings.targets_path}")
+    print(f"targets_from_env={settings.targets_json is not None}")
     print(f"targets={len(targets or [])}")
 
     checks = [
