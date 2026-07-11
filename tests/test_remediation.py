@@ -115,6 +115,26 @@ class RemediationTests(unittest.TestCase):
 
             codex_env = run.call_args.kwargs["env"]
             self.assertNotIn("GITHUB_TOKEN", codex_env)
+            command = run.call_args.args[0]
+            self.assertIn("--sandbox", command)
+            self.assertIn("workspace-write", command)
+            self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+
+    def test_no_change_result_includes_codex_output(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
+        incident, finding = load_replay_case(fixture)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remediator = Remediator(settings(root))
+            with patch.object(remediator, "_clone"), patch.object(
+                remediator, "_run_codex", return_value="sandbox setup failed"
+            ), patch.object(
+                remediator, "_changed_files", return_value=()
+            ):
+                result = remediator.repair(target(), incident, finding)
+
+            self.assertEqual(result.status, "no-change")
+            self.assertIn("sandbox setup failed", result.details)
 
     def test_diagnosis_environment_does_not_receive_service_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

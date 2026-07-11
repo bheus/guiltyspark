@@ -23,6 +23,13 @@ services:
       - GUILTYSPARK_MAX_INCIDENTS_PER_RUN=${GUILTYSPARK_MAX_INCIDENTS_PER_RUN:-8}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Codex uses bubblewrap to sandbox remediation workspaces. On Docker hosts
+    # without unprivileged user namespaces, bubblewrap needs these container
+    # permissions to create its own isolated namespace.
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
     volumes:
       - guiltyspark-data:/data
     healthcheck:

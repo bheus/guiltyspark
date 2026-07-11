@@ -86,10 +86,13 @@ class Remediator:
             workspace = Path(temporary_dir) / "repo"
             try:
                 self._clone(target, workspace)
-                self._run_codex(workspace, target, incident, finding)
+                codex_output = self._run_codex(workspace, target, incident, finding)
                 changed_files = self._changed_files(workspace)
                 if not changed_files:
-                    return RemediationResult("no-change", "Codex did not change any files")
+                    details = "Codex did not change any files"
+                    if codex_output:
+                        details += f":\n{self._redact(codex_output[-4000:])}"
+                    return RemediationResult("no-change", details)
                 self._check_patch_policy(target, changed_files)
                 validation = self._validate(workspace, target.test_commands)
                 changed_files = self._changed_files(workspace)
@@ -142,7 +145,7 @@ class Remediator:
         target: Target,
         incident: Incident,
         finding: Finding,
-    ) -> None:
+    ) -> str:
         prompt = (
             f"{REPAIR_INSTRUCTIONS}\n\n"
             f"Repository: {target.github_repo}\n"
@@ -166,7 +169,13 @@ class Remediator:
         command.append("-")
         env = self._worker_env()
         env["CODEX_HOME"] = str(self.settings.codex_home.resolve())
-        self._run(command, input_text=prompt, env=env, timeout=self.settings.codex_timeout_seconds)
+        completed = self._run(
+            command,
+            input_text=prompt,
+            env=env,
+            timeout=self.settings.codex_timeout_seconds,
+        )
+        return (completed.stdout + completed.stderr).strip()
 
     def _changed_files(self, workspace: Path) -> tuple[str, ...]:
         output = self._git(workspace, "status", "--porcelain").stdout
