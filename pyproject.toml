@@ -1,6 +1,6 @@
 [project]
 name = "guiltyspark"
-version = "0.2.0"
+version = "0.2.1"
 description = "Agentic Loki log monitor and remediation worker for application fleets."
 readme = "README.md"
 requires-python = ">=3.11"
