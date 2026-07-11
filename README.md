@@ -1,6 +1,6 @@
 # guiltyspark
 
-`guiltyspark` is a deployable agent for watching Loki logs, spotting unknown problems, and turning the useful findings into actionable reports. It is designed to run on `appl-pi` or another always-on homelab host.
+`guiltyspark` is a deployable agent for watching Loki logs, spotting unknown problems, and turning the useful findings into actionable reports. It is designed to run on `apple-pi` or another always-on host.
 
 The core loop is intentionally simple:
 
@@ -8,7 +8,9 @@ The core loop is intentionally simple:
 2. Group noisy log lines into incidents.
 3. Ask `codex exec` to explain likely bugs, misconfigurations, and improvement opportunities.
 4. Store findings locally so repeated noise does not alert forever.
-5. Optionally let Codex inspect a configured repo/config checkout and prepare a fix plan.
+5. Associate the incident with its configured GitHub repository.
+6. In an isolated clone, let Codex prepare a minimal fix and regression tests.
+7. Enforce patch policy, run validation, and optionally open a draft PR.
 
 ## What It Does
 
@@ -22,7 +24,7 @@ The core loop is intentionally simple:
 
 ## What It Does Not Do Yet
 
-- It does not automatically push code without an explicit config gate.
+- It never pushes code unless the target is explicitly configured in `draft-pr` mode.
 - It does not assume this Codex chat controls the Pi.
 - It does not require a local repo checkout unless you enable fix/PR workflows.
 
@@ -30,9 +32,17 @@ The core loop is intentionally simple:
 
 ```bash
 cp .env.example .env
-docker compose build
+cp targets.example.toml targets.local.toml
+docker compose pull
 docker compose run --rm guiltyspark codex login --device-auth
 docker compose up
+```
+
+To build the container locally instead of pulling GHCR:
+
+```bash
+docker build -t guiltyspark:local .
+GUILTYSPARK_IMAGE=guiltyspark:local docker compose up
 ```
 
 For a local dry run:
@@ -67,19 +77,62 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_CODEX_PATH` | Codex CLI binary. Defaults to `codex`. |
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
 | `GUILTYSPARK_PR_MODE` | `off`, `plan`, or `branch`. The scaffold defaults to `off`. |
+| `GUILTYSPARK_TARGETS_PATH` | Optional TOML file mapping Loki queries to GitHub repositories. |
+| `GUILTYSPARK_REMEDIATION_ROOT` | Parent directory for short-lived isolated clones. |
+| `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
 
-## appl-pi Deployment Shape
+## Repository Targets
 
-Run this as a Compose service on `appl-pi` next to your Loki network or with `LOKI_URL` pointed at the reachable Loki endpoint. Mount `/data` for persistent state and findings.
+Fleet mode uses a TOML file containing one or more Loki-to-repository mappings. Start
+from [`targets.example.toml`](targets.example.toml):
 
-If you want fix/PR workflows later, mount a read/write checkout under `/workspace` and set:
-
-```env
-GUILTYSPARK_CODEX_WORKDIR=/workspace
-GUILTYSPARK_PR_MODE=plan
+```toml
+[[targets]]
+id = "inventory-service"
+loki_url = "http://loki:3100"
+loki_query = '''{container=~"inventory-(api|worker)"}'''
+github_repo = "example-org/inventory-service"
+base_branch = "main"
+mode = "observe"
+test_commands = ["pytest -q"]
+allowed_paths = ["src", "tests"]
+max_changed_files = 8
 ```
 
-`plan` mode asks Codex for a fix plan and patch guidance. A later `branch` mode can prepare branches once repository credentials and safety rules are explicit.
+Target modes are deliberately progressive:
+
+- `observe`: detect and diagnose only.
+- `fix`: clone, edit, enforce policy, and validate; never push.
+- `draft-pr`: perform the same checks, then push a GuiltySpark branch and open a draft PR.
+
+Set `GUILTYSPARK_TARGETS_PATH=/config/targets.toml`. For private repositories and
+`draft-pr` mode, provide a token through the environment variable named by
+`GUILTYSPARK_GITHUB_TOKEN_ENV`. GuiltySpark injects it only into controller-owned Git
+and GitHub requests; Codex does not receive it.
+
+## Replaying A Captured Incident
+
+Replay fixtures use the same generic incident and finding schema as the durable remediation
+queue. For local replay, copy the target example to an ignored config, point `local_repo` at
+the associated checkout, and use `fix` mode:
+
+```bash
+GUILTYSPARK_TARGETS_PATH=targets.local.toml guiltyspark replay \
+  tests/fixtures/example-upstream-outage.json \
+  --target inventory-service \
+  --patch-output data/example.patch
+```
+
+Replay downgrades `draft-pr` to `fix` unless `--allow-push` is supplied. This makes the
+same captured incident usable for local patch evaluation and an explicitly authorized
+draft-PR exercise.
+
+## apple-pi Deployment Shape
+
+Push conventional commits to `main`. GitHub Actions tests the project, creates a semantic
+release, builds a native `linux/arm64` image, publishes versioned and `latest` tags to GHCR,
+then triggers the configured Portainer stack webhook. See
+[`deploy/appl-pi.md`](deploy/appl-pi.md) for one-time setup and secrets.
 
 ## Commands
 

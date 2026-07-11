@@ -1,0 +1,15 @@
+[[targets]]
+id = "inventory-service"
+loki_url = "http://loki:3100"
+loki_query = '''{container=~"inventory-(api|worker)"}'''
+github_repo = "example-org/inventory-service"
+base_branch = "main"
+mode = "observe"
+test_commands = [
+  "pytest -q",
+]
+allowed_paths = ["src", "tests"]
+max_changed_files = 8
+
+# Optional for local replay. Production should omit this so GuiltySpark clones GitHub.
+# local_repo = "/path/to/inventory-service"

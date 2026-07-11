@@ -10,7 +10,7 @@ WORKDIR /app
 RUN mkdir -p /workspace
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates git \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_HOME=/opt/codex CODEX_NON_INTERACTIVE=1 sh \
     && codex_bin="$(find /opt/codex /root -type f -name codex -perm -111 2>/dev/null | head -n 1)" \
@@ -20,7 +20,7 @@ RUN apt-get update \
 
 ENV CODEX_HOME=/data/codex
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md targets.example.toml ./
 COPY src ./src
 COPY knowledge ./knowledge
 COPY docker-entrypoint.sh /usr/local/bin/guiltyspark-entrypoint

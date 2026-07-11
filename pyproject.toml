@@ -1,7 +1,7 @@
 [project]
 name = "guiltyspark"
 version = "0.1.0"
-description = "Agentic Loki log monitor for homelabs and application fleets."
+description = "Agentic Loki log monitor and remediation worker for application fleets."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
@@ -20,6 +20,23 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/guiltyspark"]
+
+[tool.semantic_release]
+allow_zero_version = true
+major_on_zero = false
+version_toml = ["pyproject.toml:project.version"]
+tag_format = "v{version}"
+commit_message = "chore(release): v{version} [skip ci]"
+build_command = """
+uv lock --upgrade-package "$PACKAGE_NAME"
+git add uv.lock
+uv build
+"""
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "style", "test"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

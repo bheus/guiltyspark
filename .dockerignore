@@ -1,0 +1,17 @@
+.git
+.github
+.agents
+.codex
+.env
+.env.*
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.sqlite
+*.sqlite3
+auth.json
+data
+dist
+tests
+targets.local.toml

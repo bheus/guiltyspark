@@ -1,0 +1,31 @@
+{
+  "incident": {
+    "fingerprint": "example-upstream-none",
+    "service": "inventory-worker",
+    "level": "error",
+    "first_seen_ns": 1783775065409894036,
+    "last_seen_ns": 1783775065500223172,
+    "count": 2,
+    "labels": {
+      "container": "inventory-worker",
+      "level": "ERROR"
+    },
+    "samples": [
+      "Upstream request failed: connection refused",
+      "Worker iteration failed: 'NoneType' object has no attribute 'get'\nTraceback (most recent call last):\n  File \"/app/src/inventory/worker.py\", line 42, in run\n    item_id = response.get(\"id\")\nAttributeError: 'NoneType' object has no attribute 'get'"
+    ]
+  },
+  "finding": {
+    "fingerprint": "example-upstream-none",
+    "title": "Keep worker resilient when its upstream is unavailable",
+    "severity": "high",
+    "summary": "A temporary upstream connection failure returned no response and crashed the worker loop.",
+    "evidence": [
+      "The upstream connection was refused immediately before the worker exception.",
+      "The worker dereferenced a missing response without checking it."
+    ],
+    "suspected_cause": "The worker assumes the upstream call always returns a response object.",
+    "recommended_fix": "Handle a missing response without terminating the loop and add regression coverage for upstream failures.",
+    "pr_recommended": true
+  }
+}

@@ -57,6 +57,10 @@ class Settings:
     codex_path: str
     codex_timeout_seconds: int
     pr_mode: str
+    targets_path: Path | None = None
+    remediation_root: Path = Path("data/remediation")
+    github_token_env: str = "GITHUB_TOKEN"
+    github_api_url: str = "https://api.github.com"
     loki_bearer_token: str | None = None
     loki_basic_auth: str | None = None
 
@@ -78,13 +82,23 @@ class Settings:
             min_events=_int("GUILTYSPARK_MIN_EVENTS", 2),
             max_incidents_per_run=_int("GUILTYSPARK_MAX_INCIDENTS_PER_RUN", 8),
             model=os.getenv("GUILTYSPARK_MODEL") or None,
-            runbook_path=Path(os.getenv("GUILTYSPARK_RUNBOOK_PATH", "knowledge/homelab-runbook.md")),
+            runbook_path=Path(os.getenv("GUILTYSPARK_RUNBOOK_PATH", "knowledge/runbook.md")),
             notify_webhook_url=os.getenv("GUILTYSPARK_NOTIFY_WEBHOOK_URL") or None,
             codex_workdir=Path(os.getenv("GUILTYSPARK_CODEX_WORKDIR", "/app")),
             codex_home=Path(os.getenv("CODEX_HOME", "/data/codex")),
             codex_path=os.getenv("GUILTYSPARK_CODEX_PATH", "codex"),
             codex_timeout_seconds=_int("GUILTYSPARK_CODEX_TIMEOUT_SECONDS", 600),
             pr_mode=pr_mode,
+            targets_path=(
+                Path(value)
+                if (value := os.getenv("GUILTYSPARK_TARGETS_PATH", "").strip())
+                else None
+            ),
+            remediation_root=Path(
+                os.getenv("GUILTYSPARK_REMEDIATION_ROOT", "data/remediation")
+            ),
+            github_token_env=os.getenv("GUILTYSPARK_GITHUB_TOKEN_ENV", "GITHUB_TOKEN"),
+            github_api_url=os.getenv("GUILTYSPARK_GITHUB_API_URL", "https://api.github.com").rstrip("/"),
             loki_bearer_token=os.getenv("LOKI_BEARER_TOKEN") or None,
             loki_basic_auth=os.getenv("LOKI_BASIC_AUTH") or None,
         )

@@ -13,5 +13,6 @@ dist/
 *.pem
 *.crt
 auth.json
+targets.local.toml
 *.sqlite
 *.sqlite3

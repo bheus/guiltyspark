@@ -10,17 +10,19 @@ from typing import Any
 
 from guiltyspark.config import Settings
 from guiltyspark.models import Finding, Incident
+from guiltyspark.targets import Target
 
 
-AGENT_INSTRUCTIONS = """You are GuiltySpark, an observability agent for a homelab.
+AGENT_INSTRUCTIONS = """You are GuiltySpark, an observability agent for application fleets.
 
 You inspect Loki incident summaries and find real bugs, misconfigurations, reliability
 risks, security issues, and worthwhile improvements. You are skeptical of noisy logs:
 do not invent causes. Tie each finding to evidence from the supplied incidents.
 
-If PR mode is off, do not propose file edits. If PR mode is plan, produce a concrete
-fix plan but do not change files. If PR mode is branch, you may suggest branch/PR work
-only when the workspace is mounted and the evidence is strong.
+If remediation mode is observe, report findings without recommending a PR unless the
+evidence clearly identifies a repository defect. In fix or draft-pr mode, recommend
+repair work only when the logs support a specific, testable code or configuration fix.
+External outages alone are not code defects, but missing fallback or error handling can be.
 
 Return only JSON with this shape:
 {
@@ -44,20 +46,24 @@ Return only JSON with this shape:
 class Analyzer:
     settings: Settings
 
-    async def analyze(self, incidents: list[Incident]) -> list[Finding]:
+    async def analyze(
+        self, incidents: list[Incident], target: Target | None = None
+    ) -> list[Finding]:
         if not incidents:
             return []
-        return _run_codex(self.settings, self._prompt(incidents))
+        return _run_codex(self.settings, self._prompt(incidents, target))
 
-    def _prompt(self, incidents: list[Incident]) -> str:
+    def _prompt(self, incidents: list[Incident], target: Target | None = None) -> str:
         blocks = "\n\n---\n\n".join(incident.to_prompt_block() for incident in incidents)
+        remediation_mode = target.mode if target else self.settings.pr_mode
+        repository = target.github_repo if target else str(self.settings.codex_workdir)
         return (
             f"{AGENT_INSTRUCTIONS}\n\n"
-            "Analyze these grouped Loki incidents from my homelab/app fleet.\n"
+            "Analyze these grouped Loki incidents from the configured application fleet.\n"
             "Find only issues that are actionable or worth watching.\n\n"
-            f"Configured PR mode: {self.settings.pr_mode}\n"
-            f"Workspace: {self.settings.codex_workdir}\n\n"
-            f"Homelab runbook:\n{self._runbook_text()}\n\n"
+            f"Configured remediation mode: {remediation_mode}\n"
+            f"Associated repository: {repository}\n\n"
+            f"Operations runbook:\n{self._runbook_text()}\n\n"
             f"{blocks}"
         )
 
@@ -91,6 +97,14 @@ def _run_codex(settings: Settings, prompt: str) -> list[Finding]:
     command.append("-")
 
     env = os.environ.copy()
+    for secret_name in {
+        settings.github_token_env,
+        "GITHUB_TOKEN",
+        "LOKI_BEARER_TOKEN",
+        "LOKI_BASIC_AUTH",
+        "GUILTYSPARK_NOTIFY_WEBHOOK_URL",
+    }:
+        env.pop(secret_name, None)
     env["CODEX_HOME"] = str(settings.codex_home)
 
     try:
