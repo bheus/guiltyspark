@@ -164,15 +164,7 @@ class Remediator:
         if self.settings.model:
             command.extend(["--model", self.settings.model])
         command.append("-")
-        env = os.environ.copy()
-        for secret_name in {
-            self.settings.github_token_env,
-            "GITHUB_TOKEN",
-            "LOKI_BEARER_TOKEN",
-            "LOKI_BASIC_AUTH",
-            "GUILTYSPARK_NOTIFY_WEBHOOK_URL",
-        }:
-            env.pop(secret_name, None)
+        env = self._worker_env()
         env["CODEX_HOME"] = str(self.settings.codex_home.resolve())
         self._run(command, input_text=prompt, env=env, timeout=self.settings.codex_timeout_seconds)
 
@@ -223,6 +215,7 @@ class Remediator:
                 executable="/bin/sh",
                 text=True,
                 capture_output=True,
+                env=self._worker_env(),
                 timeout=self.settings.codex_timeout_seconds,
                 check=False,
             )
@@ -315,6 +308,25 @@ class Remediator:
                 f"{self.settings.github_token_env} is required for draft-pr mode"
             )
         return token
+
+    def _worker_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        secret_markers = (
+            "AUTH",
+            "CREDENTIAL",
+            "KEY",
+            "PASSWORD",
+            "SECRET",
+            "TOKEN",
+            "WEBHOOK",
+        )
+        for name in list(env):
+            if name == self.settings.github_token_env or any(
+                marker in name.upper() for marker in secret_markers
+            ):
+                env.pop(name, None)
+        env.pop("CODEX_HOME", None)
+        return env
 
     def _git_auth_env(self, required: bool) -> dict[str, str]:
         env = os.environ.copy()

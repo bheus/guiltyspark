@@ -90,6 +90,19 @@ class RemediationTests(unittest.TestCase):
             result = remediator._validate(Path(tmp), ("printf validated",))
             self.assertIn("validated", result)
 
+    def test_validation_environment_does_not_receive_service_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            remediator = Remediator(settings(Path(tmp)))
+            secrets = {
+                "GITHUB_TOKEN": "github-secret",
+                "LOKI_BEARER_TOKEN": "loki-secret",
+                "OPENAI_API_KEY": "openai-secret",
+            }
+            with patch.dict("os.environ", secrets, clear=True):
+                result = remediator._validate(Path(tmp), ("env",))
+            for value in secrets.values():
+                self.assertNotIn(value, result)
+
     def test_codex_environment_does_not_receive_github_token(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
         incident, finding = load_replay_case(fixture)
@@ -118,6 +131,7 @@ class RemediationTests(unittest.TestCase):
             secrets = {
                 "GITHUB_TOKEN": "github-secret",
                 "LOKI_BEARER_TOKEN": "loki-secret",
+                "OPENAI_API_KEY": "openai-secret",
                 "GUILTYSPARK_NOTIFY_WEBHOOK_URL": "webhook-secret",
             }
             with patch.dict("os.environ", secrets, clear=True):

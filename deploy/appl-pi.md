@@ -38,6 +38,10 @@ Add Loki credentials, notification settings, or polling overrides as additional
 stack variables when needed. `GUILTYSPARK_TARGETS_JSON` accepts multiple target
 objects in the same JSON array.
 
+Repository-specific profiles live separately from these generic deployment
+directions. Abraham's exact target and Portainer settings are documented in
+[`abraham.md`](abraham.md).
+
 The Compose stack automatically creates the persistent `guiltyspark-data` volume
 for SQLite, findings, remediation state, and Codex authentication. No host
 directories or bind-mounted configuration files are required.

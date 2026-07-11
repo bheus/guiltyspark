@@ -97,14 +97,12 @@ def _run_codex(settings: Settings, prompt: str) -> list[Finding]:
     command.append("-")
 
     env = os.environ.copy()
-    for secret_name in {
-        settings.github_token_env,
-        "GITHUB_TOKEN",
-        "LOKI_BEARER_TOKEN",
-        "LOKI_BASIC_AUTH",
-        "GUILTYSPARK_NOTIFY_WEBHOOK_URL",
-    }:
-        env.pop(secret_name, None)
+    secret_markers = ("AUTH", "CREDENTIAL", "KEY", "PASSWORD", "SECRET", "TOKEN", "WEBHOOK")
+    for name in list(env):
+        if name == settings.github_token_env or any(
+            marker in name.upper() for marker in secret_markers
+        ):
+            env.pop(name, None)
     env["CODEX_HOME"] = str(settings.codex_home)
 
     try:
