@@ -84,6 +84,8 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_TARGETS_JSON` | JSON target list, intended for Portainer stack configuration. |
 | `GUILTYSPARK_REMEDIATION_ROOT` | Parent directory for short-lived isolated clones. |
 | `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
+| `GUILTYSPARK_DASHBOARD_HOST` | Bind address for `guiltyspark dashboard`. Defaults to `0.0.0.0`. |
+| `GUILTYSPARK_DASHBOARD_PORT` | Port for the web dashboard. Defaults to `8343`. |
 | `GITHUB_APP_ID` | GitHub App ID. Takes precedence over personal-token authentication. |
 | `GITHUB_APP_INSTALLATION_ID` | Installation ID for the account containing target repositories. |
 | `GITHUB_APP_PRIVATE_KEY` | App private key as literal or `\n`-escaped PEM. |
@@ -159,7 +161,24 @@ target in `observe`, promote it to `fix` after reviewing diagnosis quality, and 
 guiltyspark once      # poll Loki once and analyze current incidents
 guiltyspark daemon    # run forever
 guiltyspark doctor    # validate configuration and connectivity basics
+guiltyspark dashboard # serve the web dashboard (default port 8343)
 ```
+
+## Dashboard
+
+`guiltyspark dashboard` serves a Monitor-voiced web console (default
+`http://localhost:8343`). In Docker it runs as the `guiltyspark-dashboard` compose
+service, which shares the daemon's `/data` volume and publishes port 8343. It shows
+catalogued findings, remediation history, and a live
+Loki view of recent error-severity events. Each live incident is classified into the
+target whose stream selector matches its labels; anything that matches no configured
+target is surfaced as an **unassigned anomaly**, so errors outside your containment
+protocols are still visible.
+
+The page is static HTML/JS that talks only to the JSON API (`/api/overview`,
+`/api/findings`, `/api/remediations`, `/api/anomalies?minutes=N`), so a richer
+frontend (e.g. Vue) can replace it later without backend changes. The dashboard is
+read-only and unauthenticated — keep it on your LAN.
 
 ## Notes On Auth
 

@@ -1,0 +1,300 @@
+"""HTTP dashboard for guiltyspark.
+
+Serves a JSON API over the monitor's state (findings, remediations) plus a live
+Loki view that classifies recent error traffic into configured target buckets or
+"unassigned". The static frontend consumes only the JSON API, so it can later be
+replaced by a richer client (e.g. Vue) without backend changes.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from collections import deque
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import resources
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from guiltyspark.config import Settings
+from guiltyspark.grouping import group_incidents
+from guiltyspark.loki import LokiClient
+from guiltyspark.models import LogEvent
+from guiltyspark.state import StateStore
+from guiltyspark.targets import Target
+
+ANOMALY_LEVELS = {"error", "fatal"}
+TIMELINE_BINS = 60
+
+_MATCHER = re.compile(
+    r'([a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*("(?:[^"\\]|\\.)*"|`[^`]*`)'
+)
+
+_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+}
+
+
+@dataclass(frozen=True)
+class LabelMatcher:
+    name: str
+    op: str
+    value: str
+
+    def matches(self, labels: dict[str, str]) -> bool:
+        actual = labels.get(self.name, "")
+        if self.op == "=":
+            return actual == self.value
+        if self.op == "!=":
+            return actual != self.value
+        pattern = re.compile(self.value)
+        matched = pattern.fullmatch(actual) is not None
+        return matched if self.op == "=~" else not matched
+
+
+def parse_stream_selector(query: str) -> list[LabelMatcher]:
+    """Parse the first `{...}` stream selector of a LogQL query into matchers.
+
+    Only the label-matcher portion is understood; pipeline stages are ignored.
+    Returns an empty list when no selector is found so callers fail open.
+    """
+    start = query.find("{")
+    end = query.find("}", start)
+    if start == -1 or end == -1:
+        return []
+    selector = query[start + 1 : end]
+    matchers: list[LabelMatcher] = []
+    for name, op, raw_value in _MATCHER.findall(selector):
+        if raw_value.startswith("`"):
+            value = raw_value[1:-1]
+        else:
+            value = json.loads(raw_value)
+        if op in {"=~", "!~"}:
+            try:
+                re.compile(value)
+            except re.error:
+                continue
+        matchers.append(LabelMatcher(name=name, op=op, value=value))
+    return matchers
+
+
+def selector_matches(matchers: list[LabelMatcher], labels: dict[str, str]) -> bool:
+    return bool(matchers) and all(matcher.matches(labels) for matcher in matchers)
+
+
+def tail_findings(path: Path, limit: int) -> list[dict]:
+    """Return the newest `limit` findings from the JSONL findings log."""
+    if not path.exists():
+        return []
+    kept: deque[dict] = deque(maxlen=limit)
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload.pop("raw", None)
+            kept.append(payload)
+    return list(reversed(kept))
+
+
+class DashboardService:
+    """Assembles the JSON payloads served by the dashboard."""
+
+    def __init__(self, settings: Settings, targets: list[Target]) -> None:
+        self.settings = settings
+        self.targets = targets
+        self.state = StateStore(settings.state_path)
+        self._selectors = [
+            (target.id, parse_stream_selector(target.loki_query)) for target in targets
+        ]
+
+    def overview(self) -> dict:
+        counts = self.state.dashboard_counts()
+        return {
+            "generated_at": _now_iso(),
+            "loki_url": self.settings.loki_url,
+            "interval_seconds": self.settings.interval_seconds,
+            "targets": [
+                {
+                    "id": target.id,
+                    "github_repo": target.github_repo,
+                    "mode": target.mode,
+                    "loki_query": target.loki_query,
+                }
+                for target in self.targets
+            ],
+            "counts": counts,
+        }
+
+    def findings(self, limit: int = 50) -> dict:
+        return {
+            "generated_at": _now_iso(),
+            "findings": tail_findings(self.settings.findings_path, limit),
+        }
+
+    def remediations(self, limit: int = 50) -> dict:
+        return {
+            "generated_at": _now_iso(),
+            "remediations": self.state.recent_remediations(limit),
+        }
+
+    def anomalies(self, minutes: int = 60) -> dict:
+        end_ns = time.time_ns()
+        start_ns = end_ns - minutes * 60 * 1_000_000_000
+        client = LokiClient(
+            base_url=self.settings.loki_url,
+            bearer_token=self.settings.loki_bearer_token,
+            basic_auth=self.settings.loki_basic_auth,
+        )
+        events = client.query_range(
+            query=self.settings.loki_query,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            limit=self.settings.loki_limit,
+        )
+        errors = [event for event in events if event.level in ANOMALY_LEVELS]
+        incidents = group_incidents(errors, min_events=1)
+        payload = []
+        for incident in incidents:
+            entry = asdict(incident)
+            entry["bucket"] = self._bucket_for(incident.labels)
+            entry["samples"] = incident.samples[:5]
+            payload.append(entry)
+        return {
+            "generated_at": _now_iso(),
+            "window_minutes": minutes,
+            "total_events": len(events),
+            "truncated": len(events) >= self.settings.loki_limit,
+            "error_events": len(errors),
+            "incidents": payload,
+            "timeline": _timeline(errors, start_ns, end_ns),
+        }
+
+    def _bucket_for(self, labels: dict[str, str]) -> str:
+        for target_id, matchers in self._selectors:
+            if selector_matches(matchers, labels):
+                return target_id
+        return "unassigned"
+
+
+def _timeline(events: list[LogEvent], start_ns: int, end_ns: int) -> list[dict]:
+    span = max(end_ns - start_ns, 1)
+    counts = [0] * TIMELINE_BINS
+    for event in events:
+        index = min((event.ts_ns - start_ns) * TIMELINE_BINS // span, TIMELINE_BINS - 1)
+        if index >= 0:
+            counts[int(index)] += 1
+    step = span // TIMELINE_BINS
+    return [
+        {
+            "t": _iso_from_ns(start_ns + i * step),
+            "count": count,
+        }
+        for i, count in enumerate(counts)
+    ]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _iso_from_ns(ts_ns: int) -> str:
+    return datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=timezone.utc).isoformat()
+
+
+class DashboardHandler(BaseHTTPRequestHandler):
+    server_version = "guiltyspark-dashboard"
+
+    @property
+    def service(self) -> DashboardService:
+        return self.server.service  # type: ignore[attr-defined]
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server API)
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        try:
+            if parsed.path == "/api/overview":
+                self._send_json(self.service.overview())
+            elif parsed.path == "/api/findings":
+                self._send_json(self.service.findings(_bounded(query, "limit", 50, 500)))
+            elif parsed.path == "/api/remediations":
+                self._send_json(
+                    self.service.remediations(_bounded(query, "limit", 50, 500))
+                )
+            elif parsed.path == "/api/anomalies":
+                self._send_json(
+                    self.service.anomalies(_bounded(query, "minutes", 60, 1440))
+                )
+            else:
+                self._send_static(parsed.path)
+        except Exception as exc:  # surface backend failures to the UI as JSON
+            self._send_json({"error": str(exc)}, status=502)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+    def _send_json(self, payload: dict, status: int = 200) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_static(self, path: str) -> None:
+        name = path.lstrip("/") or "index.html"
+        if "/" in name or name.startswith("."):
+            self.send_error(404)
+            return
+        resource = resources.files("guiltyspark").joinpath("web", name)
+        if not resource.is_file():
+            self.send_error(404)
+            return
+        body = resource.read_bytes()
+        suffix = Path(name).suffix
+        self.send_response(200)
+        self.send_header(
+            "Content-Type", _CONTENT_TYPES.get(suffix, "application/octet-stream")
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _bounded(query: dict[str, list[str]], key: str, default: int, maximum: int) -> int:
+    raw = query.get(key, [str(default)])[0]
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, min(value, maximum))
+
+
+def make_server(
+    settings: Settings, targets: list[Target], host: str, port: int
+) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((host, port), DashboardHandler)
+    server.service = DashboardService(settings, targets)  # type: ignore[attr-defined]
+    return server
+
+
+def serve(settings: Settings, targets: list[Target], host: str, port: int) -> None:
+    server = make_server(settings, targets, host, port)
+    print(f"dashboard listening on http://{host}:{port}", flush=True)
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()

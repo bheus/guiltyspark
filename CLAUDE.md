@@ -26,7 +26,8 @@ That is not incidental branding — see the voice section below.
 
 | File | Responsibility |
 | --- | --- |
-| `cli.py` | Entry point; subcommands `once`, `daemon`, `doctor`, `replay`. |
+| `cli.py` | Entry point; subcommands `once`, `daemon`, `doctor`, `replay`, `dashboard`. |
+| `dashboard.py` | Web dashboard: JSON API + static frontend (`web/`); classifies live errors into target buckets. |
 | `config.py` | Environment-variable-driven `Settings`. |
 | `loki.py` | Loki query client. |
 | `grouping.py` | Collapses raw log lines into incidents. |

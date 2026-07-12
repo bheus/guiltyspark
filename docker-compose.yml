@@ -43,6 +43,28 @@ services:
       retries: 3
       start_period: 30s
 
+  guiltyspark-dashboard:
+    image: ${GUILTYSPARK_IMAGE:-ghcr.io/bheus/guiltyspark:0.5.0}
+    container_name: guiltyspark-dashboard
+    restart: unless-stopped
+    command: ["guiltyspark", "dashboard"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - GUILTYSPARK_STATE_PATH=/data/guiltyspark.sqlite3
+      - GUILTYSPARK_FINDINGS_PATH=/data/findings.jsonl
+      - GUILTYSPARK_TARGETS_JSON=${GUILTYSPARK_TARGETS_JSON:-}
+      - LOKI_BEARER_TOKEN=${LOKI_BEARER_TOKEN:-}
+      - LOKI_BASIC_AUTH=${LOKI_BASIC_AUTH:-}
+      - GUILTYSPARK_DASHBOARD_PORT=${GUILTYSPARK_DASHBOARD_PORT:-8343}
+    ports:
+      - "${GUILTYSPARK_DASHBOARD_PORT:-8343}:${GUILTYSPARK_DASHBOARD_PORT:-8343}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - guiltyspark-data:/data
+
 volumes:
   guiltyspark-data:
     name: guiltyspark-data

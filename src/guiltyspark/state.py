@@ -101,6 +101,39 @@ class StateStore:
                 (status, error, target_id, fingerprint),
             )
 
+    def recent_remediations(self, limit: int = 50) -> list[dict]:
+        with self._connect() as db:
+            rows = db.execute(
+                "select target_id, fingerprint, status, branch, pr_url, created_at "
+                "from remediations order by id desc limit ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "target_id": row[0],
+                "fingerprint": row[1],
+                "status": row[2],
+                "branch": row[3],
+                "pr_url": row[4],
+                "created_at": row[5],
+            }
+            for row in rows
+        ]
+
+    def dashboard_counts(self) -> dict[str, int]:
+        with self._connect() as db:
+            findings = db.execute("select count(*) from findings").fetchone()[0]
+            target_findings = db.execute("select count(*) from target_findings").fetchone()[0]
+            remediations = db.execute("select count(*) from remediations").fetchone()[0]
+            prs_opened = db.execute(
+                "select count(*) from remediations where status = 'pr-opened'"
+            ).fetchone()[0]
+        return {
+            "findings": int(findings) + int(target_findings),
+            "remediations": int(remediations),
+            "prs_opened": int(prs_opened),
+        }
+
     def has_finding(self, finding_hash: str) -> bool:
         with self._connect() as db:
             row = db.execute("select 1 from findings where finding_hash = ?", (finding_hash,)).fetchone()

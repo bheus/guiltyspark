@@ -21,6 +21,11 @@ def main(argv: list[str] | None = None) -> int:
     subcommands.add_parser("once", help="poll Loki once and analyze incidents")
     subcommands.add_parser("daemon", help="run the monitor forever")
     subcommands.add_parser("doctor", help="check configuration and Loki reachability")
+    dashboard_cmd = subcommands.add_parser("dashboard", help="serve the web dashboard")
+    dashboard_cmd.add_argument("--host", help="bind address (default GUILTYSPARK_DASHBOARD_HOST)")
+    dashboard_cmd.add_argument(
+        "--port", type=int, help="bind port (default GUILTYSPARK_DASHBOARD_PORT)"
+    )
     replay = subcommands.add_parser("replay", help="replay a saved incident against a target")
     replay.add_argument("fixture", type=Path, help="JSON replay fixture")
     replay.add_argument("--target", required=True, help="target id from the targets file")
@@ -43,6 +48,16 @@ def main(argv: list[str] | None = None) -> int:
         return doctor(settings, targets)
     if args.command == "replay":
         return replay_incident(settings, targets, args)
+    if args.command == "dashboard":
+        from guiltyspark.dashboard import serve
+
+        serve(
+            settings,
+            targets,
+            host=args.host or settings.dashboard_host,
+            port=args.port if args.port is not None else settings.dashboard_port,
+        )
+        return 0
     if args.command == "once":
         try:
             if targets:
