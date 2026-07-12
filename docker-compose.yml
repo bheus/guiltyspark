@@ -12,6 +12,9 @@ services:
       - GUILTYSPARK_FINDINGS_PATH=/data/findings.jsonl
       - GUILTYSPARK_REMEDIATION_ROOT=/data/remediation
       - GUILTYSPARK_TARGETS_JSON=${GUILTYSPARK_TARGETS_JSON:-}
+      - LOKI_URL=${LOKI_URL:-http://host.docker.internal:3100}
+      - LOKI_QUERY=${LOKI_QUERY:-{job=~".+"}}
+      - LOKI_LIMIT=${LOKI_LIMIT:-5000}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_APP_ID=${GITHUB_APP_ID:-}
       - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:-}
@@ -55,6 +58,9 @@ services:
       - GUILTYSPARK_STATE_PATH=/data/guiltyspark.sqlite3
       - GUILTYSPARK_FINDINGS_PATH=/data/findings.jsonl
       - GUILTYSPARK_TARGETS_JSON=${GUILTYSPARK_TARGETS_JSON:-}
+      - LOKI_URL=${LOKI_URL:-http://host.docker.internal:3100}
+      - LOKI_QUERY=${LOKI_QUERY:-{job=~".+"}}
+      - LOKI_LIMIT=${LOKI_LIMIT:-5000}
       - LOKI_BEARER_TOKEN=${LOKI_BEARER_TOKEN:-}
       - LOKI_BASIC_AUTH=${LOKI_BASIC_AUTH:-}
       - GUILTYSPARK_DASHBOARD_PORT=${GUILTYSPARK_DASHBOARD_PORT:-8343}

@@ -116,14 +116,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Pin released image for Portainer polling
+      - name: Pin released image for Portainer
         if: steps.release.outputs.released == 'true'
         run: |
-          # Commit the exact image only after GHCR has it. Portainer polls main
-          # and therefore cannot redeploy before the released image exists.
+          # Commit the exact image only after GHCR has it, so Portainer never
+          # redeploys (via poll or webhook) before the released image exists.
           sed -i -E "s#ghcr\\.io/bheus/guiltyspark:[^}[:space:]]+#ghcr.io/bheus/guiltyspark:${{ steps.version.outputs.version }}#" docker-compose.yml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docker-compose.yml
           git commit -m "chore(deploy): v${{ steps.version.outputs.version }} [skip ci]"
           git push origin HEAD:refs/heads/main
+
+      - name: Trigger Portainer redeploy
+        if: steps.release.outputs.released == 'true'
+        env:
+          PORTAINER_GUILTYSPARK_WEBHOOK: ${{ secrets.PORTAINER_GUILTYSPARK_WEBHOOK }}
+        run: |
+          # No-op until the secret is configured (see Homelab Services.md for the
+          # Portainer GitOps webhook, exposed via the deploy.builtbybrendan.com
+          # Cloudflare Tunnel hostname, mirroring the Abraham stack's setup).
+          if [ -z "$PORTAINER_GUILTYSPARK_WEBHOOK" ]; then
+            echo "PORTAINER_GUILTYSPARK_WEBHOOK not set; skipping webhook trigger, relying on Portainer's poll interval."
+            exit 0
+          fi
+          curl -fsS -X POST "$PORTAINER_GUILTYSPARK_WEBHOOK"
