@@ -29,6 +29,10 @@ SECRET_VALUE = re.compile(
     r"(?i)(authorization|api[_-]?key|password|secret|token)(\s*[:=]\s*)([^\s,;]+)"
 )
 BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
+CONVENTIONAL_TITLE = re.compile(
+    r"(?i)^(?:build|chore|ci|docs|feat|fix|perf|refactor|style|test)"
+    r"(?:\([^)]*\))?!?:\s*"
+)
 
 
 @dataclass(frozen=True)
@@ -262,7 +266,7 @@ class Remediator:
     ) -> str:
         token = self._github_token(required=True)
         body = {
-            "title": f"[GuiltySpark] {finding.title}",
+            "title": self._pr_title(finding),
             "head": branch,
             "base": target.base_branch,
             "draft": True,
@@ -286,6 +290,12 @@ class Remediator:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"GitHub PR creation failed with HTTP {exc.code}: {detail}") from exc
         return str(payload["html_url"])
+
+    def _pr_title(self, finding: Finding) -> str:
+        subject = re.sub(r"\s+", " ", finding.title).strip()
+        subject = re.sub(r"(?i)^\[guiltyspark\]\s*", "", subject)
+        subject = CONVENTIONAL_TITLE.sub("", subject).strip()
+        return f"fix: {subject or 'remediate production incident'}"
 
     def _pr_body(
         self, finding: Finding, validation: str, changed_files: tuple[str, ...]

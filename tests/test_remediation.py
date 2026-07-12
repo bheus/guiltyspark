@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import subprocess
+from dataclasses import replace
 from unittest.mock import patch
 from pathlib import Path
 
@@ -186,5 +187,23 @@ class RemediationTests(unittest.TestCase):
             body = request.data.decode("utf-8")
             self.assertEqual(pr_url, "https://github.com/owner/app/pull/1")
             self.assertIn('"draft": true', body)
+            self.assertIn(
+                '"title": "fix: Keep worker resilient when its upstream is unavailable"',
+                body,
+            )
             self.assertNotIn("very-secret-token", body)
             self.assertNotIn("validation-secret", body)
+
+    def test_pr_title_normalizes_existing_prefix_and_whitespace(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
+        _, finding = load_replay_case(fixture)
+        finding = replace(
+            finding,
+            title="[GuiltySpark] feat(worker):  Keep worker\nresilient",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            remediator = Remediator(settings(Path(tmp)))
+            self.assertEqual(
+                remediator._pr_title(finding),
+                "fix: Keep worker resilient",
+            )
