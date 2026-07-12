@@ -305,17 +305,27 @@ class Remediator:
         evidence = "\n".join(f"- {self._redact(item)}" for item in finding.evidence)
         files = "\n".join(f"- `{path}`" for path in changed_files)
         return (
-            "## Incident\n\n"
+            "## Containment Record\n\n"
+            "Reclaimer, an operational anomaly was detected and classified. I have "
+            "prepared the smallest corrective measure permitted by repository protocol.\n\n"
             f"{self._redact(finding.summary)}\n\n"
-            "## Evidence\n\n"
+            "## Evidence Archive\n\n"
+            "The following telemetry was judged relevant. I assure you, the cataloging "
+            "was quite thorough.\n\n"
             f"{evidence}\n\n"
-            "## Suspected Cause\n\n"
+            "## Causal Assessment\n\n"
+            "The most probable source of the malfunction is as follows:\n\n"
             f"{self._redact(finding.suspected_cause)}\n\n"
-            "## Changed Files\n\n"
+            "## Corrective Protocol\n\n"
+            "The following repository artifacts required adjustment:\n\n"
             f"{files}\n\n"
-            "## Validation\n\n"
+            "## Verification Sequence\n\n"
+            "Naturally, no corrective action should be presented without validation. "
+            "The prescribed test sequence completed with this result:\n\n"
             f"```text\n{self._redact(validation[-6000:])}\n```\n\n"
-            f"Incident fingerprint: `{finding.fingerprint}`\n"
+            "All automated safeguards under my control have been satisfied. Final "
+            "authorization remains yours, Reclaimer.\n\n"
+            f"Incident designation: `{finding.fingerprint}`\n"
         )
 
     def _redact(self, value: str) -> str:

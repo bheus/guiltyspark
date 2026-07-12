@@ -212,6 +212,9 @@ class RemediationTests(unittest.TestCase):
                 '"title": "fix: Keep worker resilient when its upstream is unavailable"',
                 body,
             )
+            self.assertIn("Containment Record", body)
+            self.assertIn("Final authorization remains yours, Reclaimer", body)
+            self.assertIn("Incident designation", body)
             self.assertNotIn("very-secret-token", body)
             self.assertNotIn("validation-secret", body)
 
