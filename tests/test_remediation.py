@@ -184,7 +184,7 @@ class RemediationTests(unittest.TestCase):
             for name in secrets:
                 self.assertNotIn(name, codex_env)
 
-    def test_pr_creation_uses_draft_and_redacts_secrets(self) -> None:
+    def test_draft_pr_creation_uses_draft_and_redacts_secrets(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
         _, finding = load_replay_case(fixture)
         finding.evidence.append("Authorization: Bearer very-secret-token")
@@ -196,8 +196,8 @@ class RemediationTests(unittest.TestCase):
             )
             with patch.dict("os.environ", {"GITHUB_TOKEN": "github-secret"}, clear=True):
                 with patch("urllib.request.urlopen", return_value=response) as urlopen:
-                    pr_url = remediator._create_draft_pr(
-                        target(),
+                    pr_url = remediator._create_pr(
+                        target(mode="draft-pr"),
                         "guiltyspark/app/incident-1",
                         finding,
                         "pytest passed; token=validation-secret",
@@ -217,6 +217,29 @@ class RemediationTests(unittest.TestCase):
             self.assertIn("Incident designation", body)
             self.assertNotIn("very-secret-token", body)
             self.assertNotIn("validation-secret", body)
+
+    def test_pr_mode_creates_review_ready_pull_request(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
+        _, finding = load_replay_case(fixture)
+        with tempfile.TemporaryDirectory() as tmp:
+            remediator = Remediator(settings(Path(tmp)))
+            response = unittest.mock.MagicMock()
+            response.__enter__.return_value.read.return_value = (
+                b'{"html_url":"https://github.com/owner/app/pull/2"}'
+            )
+            with patch.dict("os.environ", {"GITHUB_TOKEN": "github-secret"}, clear=True):
+                with patch("urllib.request.urlopen", return_value=response) as urlopen:
+                    pr_url = remediator._create_pr(
+                        target(mode="pr"),
+                        "guiltyspark/app/incident-2",
+                        finding,
+                        "pytest passed",
+                        ("src/app.py",),
+                    )
+
+            body = urlopen.call_args.args[0].data.decode("utf-8")
+            self.assertEqual(pr_url, "https://github.com/owner/app/pull/2")
+            self.assertIn('"draft": false', body)
 
     def test_pr_title_normalizes_existing_prefix_and_whitespace(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"

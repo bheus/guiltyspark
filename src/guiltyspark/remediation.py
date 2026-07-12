@@ -115,7 +115,7 @@ class Remediator:
                     )
 
                 branch = self._commit_and_push(workspace, target, finding)
-                pr_url = self._create_draft_pr(target, branch, finding, validation, changed_files)
+                pr_url = self._create_pr(target, branch, finding, validation, changed_files)
                 return RemediationResult(
                     "pr-opened",
                     validation,
@@ -258,7 +258,7 @@ class Remediator:
         )
         return branch
 
-    def _create_draft_pr(
+    def _create_pr(
         self,
         target: Target,
         branch: str,
@@ -271,7 +271,7 @@ class Remediator:
             "title": self._pr_title(finding),
             "head": branch,
             "base": target.base_branch,
-            "draft": True,
+            "draft": target.mode == "draft-pr",
             "body": self._pr_body(finding, validation, changed_files),
         }
         request = urllib.request.Request(

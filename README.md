@@ -1,6 +1,6 @@
 # guiltyspark
 
-`guiltyspark` is a deployable agent for watching Loki logs, spotting unknown problems, and turning the useful findings into actionable reports. It is designed to run on `apple-pi` or another always-on host.
+`guiltyspark` is a deployable agent for watching Loki logs, spotting unknown problems, and turning the useful findings into actionable reports. It is designed to run on any always-on Docker host.
 
 The core loop is intentionally simple:
 
@@ -10,7 +10,7 @@ The core loop is intentionally simple:
 4. Store findings locally so repeated noise does not alert forever.
 5. Associate the incident with its configured GitHub repository.
 6. In an isolated clone, let Codex prepare a minimal fix and regression tests.
-7. Enforce patch policy, run validation, and optionally open a draft PR.
+7. Enforce patch policy, run validation, and optionally open a PR.
 
 ## What It Does
 
@@ -24,7 +24,7 @@ The core loop is intentionally simple:
 
 ## What It Does Not Do Yet
 
-- It never pushes code unless the target is explicitly configured in `draft-pr` mode.
+- It never pushes code unless the target is explicitly configured in `draft-pr` or `pr` mode.
 - It does not assume this Codex chat controls the Pi.
 - It does not require a local repo checkout unless you enable fix/PR workflows.
 
@@ -109,10 +109,11 @@ Target modes are deliberately progressive:
 - `observe`: detect and diagnose only.
 - `fix`: clone, edit, enforce policy, and validate; never push.
 - `draft-pr`: perform the same checks, then push a GuiltySpark branch and open a draft PR.
+- `pr`: perform the same checks, then push a GuiltySpark branch and open a review-ready PR.
 
 Production can supply the same structure as a JSON list through
 `GUILTYSPARK_TARGETS_JSON`; this is the preferred Portainer configuration path and
-takes precedence over the local TOML file. For private repositories and `draft-pr`
+takes precedence over the local TOML file. For private repositories and PR modes
 mode, prefer a GitHub App installed only on the configured repositories. Set
 `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and either `GITHUB_APP_PRIVATE_KEY`
 or `GITHUB_APP_PRIVATE_KEY_FILE`. GuiltySpark mints and caches short-lived
@@ -134,16 +135,20 @@ GUILTYSPARK_TARGETS_PATH=targets.local.toml guiltyspark replay \
   --patch-output data/example.patch
 ```
 
-Replay downgrades `draft-pr` to `fix` unless `--allow-push` is supplied. This makes the
+Replay downgrades `draft-pr` and `pr` to `fix` unless `--allow-push` is supplied. This makes the
 same captured incident usable for local patch evaluation and an explicitly authorized
 draft-PR exercise.
 
-## apple-pi Deployment Shape
+## Deployment
 
 Push conventional commits to `main`. GitHub Actions tests the project, creates a semantic
 release, builds a native `linux/arm64` image, publishes versioned and `latest` tags to GHCR,
-then pins the released image on `main` for Portainer to poll. See
-[`deploy/appl-pi.md`](deploy/appl-pi.md) for one-time setup and secrets.
+then pins the released image on `main` for a Git-based container orchestrator to poll.
+
+Supply target mappings and credentials through environment variables at deployment time.
+The repository intentionally contains no application-specific target profiles. Start each
+target in `observe`, promote it to `fix` after reviewing diagnosis quality, and use
+`draft-pr` or `pr` only after its validation commands and allowed paths are established.
 
 ## Commands
 
@@ -161,4 +166,5 @@ The monitor uses Codex CLI instead of `OPENAI_API_KEY`. Sign in once with your C
 docker compose run --rm guiltyspark codex login --device-auth
 ```
 
-The login is stored under `CODEX_HOME`, which is mounted through `./data`.
+The login is stored under `CODEX_HOME`, backed by the Compose-managed
+`guiltyspark-data` volume.

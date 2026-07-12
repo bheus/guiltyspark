@@ -131,7 +131,8 @@ class Monitor:
 
         attempted = 0
         jobs = self.state.pending_remediation_jobs(
-            self.target_id, include_validated=self.target.mode == "draft-pr"
+            self.target_id,
+            include_validated=self.target.mode in {"draft-pr", "pr"},
         )
         for fingerprint, payload_text in jobs:
             payload = json.loads(payload_text)

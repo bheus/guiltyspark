@@ -20,7 +20,7 @@ risks, security issues, and worthwhile improvements. You are skeptical of noisy 
 do not invent causes. Tie each finding to evidence from the supplied incidents.
 
 If remediation mode is observe, report findings without recommending a PR unless the
-evidence clearly identifies a repository defect. In fix or draft-pr mode, recommend
+evidence clearly identifies a repository defect. In fix, draft-pr, or pr mode, recommend
 repair work only when the logs support a specific, testable code or configuration fix.
 External outages alone are not code defects, but missing fallback or error handling can be.
 

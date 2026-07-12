@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-VALID_MODES = {"observe", "fix", "draft-pr"}
+VALID_MODES = {"observe", "fix", "draft-pr", "pr"}
 TARGET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 GITHUB_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 

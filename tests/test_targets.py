@@ -85,3 +85,12 @@ mode = "fix"
         self.assertEqual(len(targets), 1)
         self.assertEqual(targets[0].id, "worker")
         self.assertEqual(targets[0].mode, "observe")
+
+    def test_pr_mode_is_supported(self) -> None:
+        targets = load_targets_json(
+            '[{"id":"worker","loki_url":"http://loki:3100",'
+            '"loki_query":"{container=\\"worker\\"}",'
+            '"github_repo":"example/worker","mode":"pr",'
+            '"test_commands":["pytest"],"allowed_paths":["src","tests"]}]'
+        )
+        self.assertEqual(targets[0].mode, "pr")

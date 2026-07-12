@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     replay.add_argument(
         "--allow-push",
         action="store_true",
-        help="honor draft-pr mode; without this flag replay never pushes",
+        help="honor draft-pr or pr mode; without this flag replay never pushes",
     )
     replay.add_argument("--patch-output", type=Path, help="write the generated patch here")
     args = parser.parse_args(argv)
@@ -83,7 +83,7 @@ def replay_incident(settings: Settings, targets: list[Target], args: argparse.Na
     target = matches[0]
     if target.mode == "observe":
         target = replace(target, mode="fix")
-    elif target.mode == "draft-pr" and not args.allow_push:
+    elif target.mode in {"draft-pr", "pr"} and not args.allow_push:
         target = replace(target, mode="fix")
 
     incident, finding = load_replay_case(args.fixture)

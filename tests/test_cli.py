@@ -1,6 +1,7 @@
 import io
 import os
 import unittest
+from argparse import Namespace
 from contextlib import redirect_stderr
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,9 +10,56 @@ from urllib.error import URLError
 
 from guiltyspark import cli
 from guiltyspark.config import Settings
+from guiltyspark.remediation import RemediationResult
+from guiltyspark.targets import Target
 
 
 class CliTests(unittest.TestCase):
+    def test_replay_downgrades_pr_mode_without_allow_push(self) -> None:
+        target = Target(
+            id="app",
+            loki_url="http://loki",
+            loki_query="query",
+            github_repo="owner/app",
+            mode="pr",
+            test_commands=("pytest",),
+            allowed_paths=("src", "tests"),
+        )
+        args = Namespace(
+            target="app",
+            allow_push=False,
+            patch_output=None,
+            fixture=Path(__file__).parent / "fixtures" / "example-upstream-outage.json",
+        )
+        with TemporaryDirectory() as tmp:
+            settings = Settings(
+                loki_url="http://loki",
+                loki_query="query",
+                loki_limit=100,
+                interval_seconds=60,
+                lookback_seconds=60,
+                state_path=Path(tmp) / "state.sqlite3",
+                findings_path=Path(tmp) / "findings.jsonl",
+                min_events=1,
+                max_incidents_per_run=1,
+                model=None,
+                runbook_path=None,
+                notify_webhook_url=None,
+                codex_workdir=Path(tmp),
+                codex_home=Path(tmp),
+                codex_path="codex",
+                codex_timeout_seconds=30,
+                pr_mode="off",
+            )
+            with patch("guiltyspark.cli.Remediator") as remediator:
+                remediator.return_value.repair.return_value = RemediationResult(
+                    "validated", "tests passed"
+                )
+                self.assertEqual(cli.replay_incident(settings, [target], args), 0)
+
+        replay_target = remediator.return_value.repair.call_args.args[0]
+        self.assertEqual(replay_target.mode, "fix")
+
     def test_once_reports_loki_connection_error_without_traceback(self) -> None:
         with patch.dict("os.environ", {"LOKI_URL": "http://localhost:3100"}, clear=True):
             with patch("guiltyspark.cli.Monitor") as monitor_class:
