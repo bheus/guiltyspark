@@ -74,6 +74,9 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_FINDINGS_PATH` | JSONL findings output path. |
 | `GUILTYSPARK_RUNBOOK_PATH` | Markdown runbook the agent reads before analysis. |
 | `GUILTYSPARK_NOTIFY_WEBHOOK_URL` | Optional generic JSON webhook for new findings. |
+| `RESEND_API_KEY` | Resend API key. Enables an email when guiltyspark opens a PR (only fires for its own PRs, never your manual ones). |
+| `GUILTYSPARK_NOTIFY_EMAIL_FROM` | Verified Resend sender address for PR-opened emails. |
+| `GUILTYSPARK_NOTIFY_EMAIL_TO` | Recipient address for PR-opened emails. |
 | `GUILTYSPARK_CODEX_PATH` | Codex CLI binary. Defaults to `codex`. |
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
 | `GUILTYSPARK_PR_MODE` | `off`, `plan`, or `branch`. The scaffold defaults to `off`. |

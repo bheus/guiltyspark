@@ -52,6 +52,9 @@ class Settings:
     model: str | None
     runbook_path: Path | None
     notify_webhook_url: str | None
+    resend_api_key: str | None
+    notify_email_from: str | None
+    notify_email_to: str | None
     codex_workdir: Path
     codex_home: Path
     codex_path: str
@@ -89,6 +92,9 @@ class Settings:
             model=os.getenv("GUILTYSPARK_MODEL") or None,
             runbook_path=Path(os.getenv("GUILTYSPARK_RUNBOOK_PATH", "knowledge/runbook.md")),
             notify_webhook_url=os.getenv("GUILTYSPARK_NOTIFY_WEBHOOK_URL") or None,
+            resend_api_key=os.getenv("RESEND_API_KEY") or None,
+            notify_email_from=os.getenv("GUILTYSPARK_NOTIFY_EMAIL_FROM") or None,
+            notify_email_to=os.getenv("GUILTYSPARK_NOTIFY_EMAIL_TO") or None,
             codex_workdir=Path(os.getenv("GUILTYSPARK_CODEX_WORKDIR", "/app")),
             codex_home=Path(os.getenv("CODEX_HOME", "/data/codex")),
             codex_path=os.getenv("GUILTYSPARK_CODEX_PATH", "codex"),

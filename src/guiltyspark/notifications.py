@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from guiltyspark.models import Finding
 
+RESEND_ENDPOINT = "https://api.resend.com/emails"
+
 
 @dataclass(frozen=True)
 class Notifier:
@@ -30,6 +32,64 @@ class Notifier:
             self.webhook_url,
             data=body,
             headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10):
+            return
+
+
+@dataclass(frozen=True)
+class EmailNotifier:
+    """Sends a Monitor-voiced email via Resend when guiltyspark opens a PR.
+
+    This only ever fires from guiltyspark's own PR-creation path, so the operator
+    is never notified about pull requests they open themselves.
+    """
+
+    api_key: str | None = None
+    sender: str | None = None
+    recipient: str | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key and self.sender and self.recipient)
+
+    def send_pr_opened(self, finding: Finding, pr_url: str, repository: str) -> None:
+        if not self.enabled:
+            return
+        subject = (
+            f"[GuiltySpark] Reclaimer, a corrective measure awaits your authorization "
+            f"— {finding.title}"
+        )
+        text = (
+            "Reclaimer,\n\n"
+            "An operational anomaly was detected and classified. I have prepared the "
+            "smallest corrective measure permitted by repository protocol and opened a "
+            "pull request for your review.\n\n"
+            f"Repository: {repository}\n"
+            f"Severity:   {finding.severity}\n"
+            f"Anomaly:    {finding.title}\n\n"
+            f"Assessment:\n{finding.summary}\n\n"
+            f"Suspected cause:\n{finding.suspected_cause}\n\n"
+            f"Pull request: {pr_url}\n\n"
+            "Final authorization remains yours, Reclaimer.\n\n"
+            f"Incident designation: {finding.fingerprint}\n"
+        )
+        body = json.dumps(
+            {
+                "from": self.sender,
+                "to": [self.recipient],
+                "subject": subject,
+                "text": text,
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            RESEND_ENDPOINT,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=10):

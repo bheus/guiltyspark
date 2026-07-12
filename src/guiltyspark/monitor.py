@@ -11,7 +11,7 @@ from guiltyspark.config import Settings
 from guiltyspark.grouping import group_incidents
 from guiltyspark.loki import LokiClient
 from guiltyspark.models import Finding, Incident
-from guiltyspark.notifications import Notifier
+from guiltyspark.notifications import EmailNotifier, Notifier
 from guiltyspark.remediation import Remediator
 from guiltyspark.state import StateStore
 from guiltyspark.targets import Target
@@ -41,6 +41,11 @@ class Monitor:
         )
         self.analyzer = Analyzer(settings)
         self.notifier = Notifier(settings.notify_webhook_url)
+        self.email_notifier = EmailNotifier(
+            api_key=settings.resend_api_key,
+            sender=settings.notify_email_from,
+            recipient=settings.notify_email_to,
+        )
         self.remediator = Remediator(settings)
 
     async def run_once(self) -> RunSummary:
@@ -155,6 +160,16 @@ class Monitor:
                 result.status,
                 result.details[-8000:] if result.status == "failed" else "",
             )
+            if result.status == "pr-opened" and result.pr_url:
+                try:
+                    self.email_notifier.send_pr_opened(
+                        finding, result.pr_url, self.target.github_repo
+                    )
+                except Exception as exc:
+                    print(
+                        f"email_notify_error fingerprint={finding.fingerprint} error={exc}",
+                        flush=True,
+                    )
             print(
                 f"target={self.target_id} remediation={result.status} "
                 f"fingerprint={finding.fingerprint} pr_url={result.pr_url or ''}",
