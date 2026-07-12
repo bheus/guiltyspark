@@ -32,8 +32,15 @@ Set these stack environment variables:
 
 ```text
 GUILTYSPARK_TARGETS_JSON=[{"id":"inventory-service","loki_url":"http://loki:3100","loki_query":"{container=~\"inventory-(api|worker)\"}","github_repo":"example-org/inventory-service","base_branch":"main","mode":"observe","test_commands":["pytest -q"],"allowed_paths":["src","tests"],"max_changed_files":8}]
-GITHUB_TOKEN=<token with repository contents and pull-request write access>
+GITHUB_APP_ID=<app ID>
+GITHUB_APP_INSTALLATION_ID=<installation ID>
+GITHUB_APP_PRIVATE_KEY=<literal or \n-escaped PEM private key>
 ```
+
+Install the private GitHub App only on repositories GuiltySpark manages. Grant
+repository Contents read/write and Pull requests read/write. `GITHUB_TOKEN` remains
+a migration fallback when no GitHub App variables are set; remove it after App
+authentication is verified.
 
 Add Loki credentials, notification settings, or polling overrides as additional
 stack variables when needed. `GUILTYSPARK_TARGETS_JSON` accepts multiple target

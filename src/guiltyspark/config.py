@@ -62,6 +62,10 @@ class Settings:
     remediation_root: Path = Path("data/remediation")
     github_token_env: str = "GITHUB_TOKEN"
     github_api_url: str = "https://api.github.com"
+    github_app_id: str | None = None
+    github_app_installation_id: str | None = None
+    github_app_private_key: str | None = None
+    github_app_private_key_file: Path | None = None
     loki_bearer_token: str | None = None
     loki_basic_auth: str | None = None
 
@@ -101,6 +105,14 @@ class Settings:
             ),
             github_token_env=os.getenv("GUILTYSPARK_GITHUB_TOKEN_ENV", "GITHUB_TOKEN"),
             github_api_url=os.getenv("GUILTYSPARK_GITHUB_API_URL", "https://api.github.com").rstrip("/"),
+            github_app_id=os.getenv("GITHUB_APP_ID") or None,
+            github_app_installation_id=os.getenv("GITHUB_APP_INSTALLATION_ID") or None,
+            github_app_private_key=os.getenv("GITHUB_APP_PRIVATE_KEY") or None,
+            github_app_private_key_file=(
+                Path(value)
+                if (value := os.getenv("GITHUB_APP_PRIVATE_KEY_FILE", "").strip())
+                else None
+            ),
             loki_bearer_token=os.getenv("LOKI_BEARER_TOKEN") or None,
             loki_basic_auth=os.getenv("LOKI_BASIC_AUTH") or None,
         )

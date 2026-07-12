@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from guiltyspark.config import Settings
+from guiltyspark.github_auth import GitHubAuth
 from guiltyspark.models import Finding, Incident
 from guiltyspark.targets import Target
 
@@ -78,6 +79,7 @@ def load_replay_case(path: Path) -> tuple[Incident, Finding]:
 class Remediator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.github_auth = GitHubAuth(settings)
 
     def repair(self, target: Target, incident: Incident, finding: Finding) -> RemediationResult:
         if target.mode == "observe":
@@ -321,12 +323,7 @@ class Remediator:
         return SECRET_VALUE.sub(r"\1\2[REDACTED]", redacted)
 
     def _github_token(self, required: bool) -> str | None:
-        token = os.getenv(self.settings.github_token_env)
-        if required and not token:
-            raise RuntimeError(
-                f"{self.settings.github_token_env} is required for draft-pr mode"
-            )
-        return token
+        return self.github_auth.token(required)
 
     def _worker_env(self) -> dict[str, str]:
         env = os.environ.copy()
@@ -348,7 +345,7 @@ class Remediator:
         return env
 
     def _git_auth_env(self, required: bool) -> dict[str, str]:
-        env = os.environ.copy()
+        env = self._worker_env()
         token = self._github_token(required)
         if token:
             credentials = base64.b64encode(f"x-access-token:{token}".encode()).decode()

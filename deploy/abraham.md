@@ -15,16 +15,20 @@ modify the separately managed `loki-stack_loki` network.
 Also configure:
 
 ```text
-GITHUB_TOKEN=<fine-grained token installed only on bheus/Abraham>
+GITHUB_APP_ID=<GuiltySpark App ID>
+GITHUB_APP_INSTALLATION_ID=<installation ID for bheus>
+GITHUB_APP_PRIVATE_KEY=<literal or \n-escaped PEM private key>
 GUILTYSPARK_INTERVAL_SECONDS=300
 GUILTYSPARK_LOOKBACK_SECONDS=900
 GUILTYSPARK_MIN_EVENTS=2
 GUILTYSPARK_MAX_INCIDENTS_PER_RUN=8
 ```
 
-The GitHub token needs repository contents read/write and pull request read/write
-permissions. It is used only by GuiltySpark's Git and GitHub controller and is
-removed from the Codex subprocess environment.
+Install the App on `bheus/Abraham` and grant repository Contents read/write and Pull
+requests read/write. App credentials and the short-lived installation tokens they
+mint are used only by GuiltySpark's Git and GitHub controller and are removed from
+the Codex subprocess environment. Keep `GITHUB_TOKEN` only during migration, then
+remove it after App authentication is verified.
 
 ## Watched Containers
 

@@ -121,6 +121,27 @@ class RemediationTests(unittest.TestCase):
             self.assertIn("workspace-write", command)
             self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
 
+    def test_git_environment_receives_token_but_not_app_private_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            remediator = Remediator(settings(Path(tmp)))
+            with patch.dict(
+                "os.environ",
+                {
+                    "GITHUB_APP_PRIVATE_KEY": "private-key",
+                    "SERVICE_PASSWORD": "service-secret",
+                },
+                clear=True,
+            ), patch.object(
+                remediator.github_auth,
+                "token",
+                return_value="installation-token",
+            ):
+                git_env = remediator._git_auth_env(required=True)
+
+            self.assertNotIn("GITHUB_APP_PRIVATE_KEY", git_env)
+            self.assertNotIn("SERVICE_PASSWORD", git_env)
+            self.assertIn("Authorization: Basic", git_env["GIT_CONFIG_VALUE_0"])
+
     def test_no_change_result_includes_codex_output(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
         incident, finding = load_replay_case(fixture)

@@ -81,6 +81,10 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_TARGETS_JSON` | JSON target list, intended for Portainer stack configuration. |
 | `GUILTYSPARK_REMEDIATION_ROOT` | Parent directory for short-lived isolated clones. |
 | `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
+| `GITHUB_APP_ID` | GitHub App ID. Takes precedence over personal-token authentication. |
+| `GITHUB_APP_INSTALLATION_ID` | Installation ID for the account containing target repositories. |
+| `GITHUB_APP_PRIVATE_KEY` | App private key as literal or `\n`-escaped PEM. |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | Alternative path to a mounted App private-key PEM. |
 
 ## Repository Targets
 
@@ -109,9 +113,13 @@ Target modes are deliberately progressive:
 Production can supply the same structure as a JSON list through
 `GUILTYSPARK_TARGETS_JSON`; this is the preferred Portainer configuration path and
 takes precedence over the local TOML file. For private repositories and `draft-pr`
-mode, provide a token through the environment variable named by
-`GUILTYSPARK_GITHUB_TOKEN_ENV`. GuiltySpark injects it only into controller-owned Git
-and GitHub requests; Codex does not receive it.
+mode, prefer a GitHub App installed only on the configured repositories. Set
+`GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and either `GITHUB_APP_PRIVATE_KEY`
+or `GITHUB_APP_PRIVATE_KEY_FILE`. GuiltySpark mints and caches short-lived
+installation tokens for controller-owned Git and GitHub requests; Codex does not
+receive App credentials or installation tokens. A token provided through
+`GUILTYSPARK_GITHUB_TOKEN_ENV` remains available as a fallback when no App variables
+are configured. Partial App configuration is an error.
 
 ## Replaying A Captured Incident
 
