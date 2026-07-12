@@ -1,20 +1,22 @@
-/* Forerunner console — deep hull blues, one luminous cyan eye. */
+/* Forerunner console — pale hull metal, illuminated panels, one deep cyan eye. */
 
 :root {
-  --void: #060b12;
-  --hull: #0b1420;
-  --hull-2: #101c2c;
-  --seam: #1c2e44;
-  --seam-dim: #12202f;
-  --ink: #d8e6f2;
-  --ink-dim: #7c93ab;
-  --ink-faint: #4e6378;
-  --eye: #5fd4f4;
-  --eye-glow: #9be8ff;
-  --critical: #e8505b;
-  --serious: #e8853c;
-  --warning: #d9ae3b;
-  --nominal: #43b36a;
+  color-scheme: light;
+  --void: #dbe4ec;
+  --hull: #ffffff;
+  --hull-2: #eef3f8;
+  --seam: #b7c7d6;
+  --seam-dim: #d3dee7;
+  --ink: #16242f;
+  --ink-dim: #46596b;
+  --ink-faint: #77899b;
+  --eye: #0c86ac;
+  --eye-glow: #6fdcff;
+  --on-eye: #ffffff;
+  --critical: #cf3b46;
+  --serious: #c26320;
+  --warning: #9a7d14;
+  --nominal: #2e9457;
   --display: "Avenir Next Condensed", "Avenir Next", "Arial Narrow", "Segoe UI", sans-serif;
   --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -245,7 +247,7 @@ h2 {
 }
 
 .window-picker button:hover { border-color: var(--seam); color: var(--ink); }
-.window-picker button.active { color: var(--void); background: var(--eye); border-color: var(--eye); font-weight: 700; }
+.window-picker button.active { color: var(--on-eye); background: var(--eye); border-color: var(--eye); font-weight: 700; }
 .window-picker button:focus-visible,
 button:focus-visible, a:focus-visible, summary:focus-visible {
   outline: 2px solid var(--eye);
