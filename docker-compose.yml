@@ -1,6 +1,6 @@
 services:
   guiltyspark:
-    image: ${GUILTYSPARK_IMAGE:-ghcr.io/bheus/guiltyspark:0.5.0}
+    image: ${GUILTYSPARK_IMAGE:-ghcr.io/bheus/guiltyspark:0.6.0}
     container_name: guiltyspark
     restart: unless-stopped
     env_file:
@@ -44,7 +44,7 @@ services:
       start_period: 30s
 
   guiltyspark-dashboard:
-    image: ${GUILTYSPARK_IMAGE:-ghcr.io/bheus/guiltyspark:0.5.0}
+    image: ${GUILTYSPARK_IMAGE:-ghcr.io/bheus/guiltyspark:0.6.0}
     container_name: guiltyspark-dashboard
     restart: unless-stopped
     command: ["guiltyspark", "dashboard"]
