@@ -22,6 +22,28 @@
   --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* Follow the operating system appearance when no explicit app preference is set. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --void: #060b12;
+    --hull: #0b1420;
+    --hull-2: #101c2c;
+    --seam: #1c2e44;
+    --seam-dim: #12202f;
+    --ink: #d8e6f2;
+    --ink-dim: #7c93ab;
+    --ink-faint: #4e6378;
+    --eye: #5fd4f4;
+    --eye-glow: #9be8ff;
+    --on-eye: #060b12;
+    --critical: #e8505b;
+    --serious: #e8853c;
+    --warning: #d9ae3b;
+    --nominal: #43b36a;
+  }
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
