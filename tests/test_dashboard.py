@@ -14,6 +14,7 @@ from guiltyspark.dashboard import (
     parse_stream_selector,
     selector_matches,
     tail_findings,
+    validate_pattern,
 )
 from guiltyspark.models import LogEvent
 from guiltyspark.state import StateStore
@@ -96,6 +97,28 @@ class TestSelectorMatches:
         assert not selector_matches([], {"container": "anything"})
 
 
+class TestValidatePattern:
+    def test_accepts_reasonable_regex(self):
+        assert validate_pattern("  error .*scheduler  ") == "error .*scheduler"
+
+    def test_rejects_empty(self):
+        with pytest.raises(ValueError):
+            validate_pattern("   ")
+
+    def test_rejects_too_broad(self):
+        for degenerate in (".*", ".+", ".", "^.*$"):
+            with pytest.raises(ValueError):
+                validate_pattern(degenerate)
+
+    def test_rejects_uncompilable(self):
+        with pytest.raises(ValueError):
+            validate_pattern("error (unterminated")
+
+    def test_rejects_overlong(self):
+        with pytest.raises(ValueError):
+            validate_pattern("a" * 1001)
+
+
 class TestTailFindings:
     def test_returns_newest_first_without_raw(self, tmp_path):
         path = tmp_path / "findings.jsonl"
@@ -150,6 +173,157 @@ class TestDashboardService:
         second = service.anomalies(minutes=60)
         assert second["incidents"] == []
         assert second["ignored_count"] == 1
+
+    def _fake_loki(self, monkeypatch, events):
+        import guiltyspark.dashboard as dashboard
+
+        class FakeLoki:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def query_range(self, *args, **kwargs):
+                return events
+
+        monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
+
+    def test_grouping_absent_when_disabled(self, tmp_path, monkeypatch):
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "loki"}, line="error alpha"),
+            LogEvent(ts_ns=2, labels={"container": "loki"}, line="error beta"),
+        ]
+        self._fake_loki(monkeypatch, events)
+        service = DashboardService(_settings(tmp_path), [_target()])
+        assert "groups" not in service.anomalies(minutes=60)
+
+    def test_grouping_clusters_and_caches(self, tmp_path, monkeypatch):
+        import guiltyspark.dashboard as dashboard
+        from guiltyspark.clustering import AnomalyGroup
+
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "loki"}, line="error alpha"),
+            LogEvent(ts_ns=2, labels={"container": "loki"}, line="error beta"),
+        ]
+        self._fake_loki(monkeypatch, events)
+        service = DashboardService(
+            _settings(tmp_path, dashboard_grouping=True), [_target()]
+        )
+        fps = sorted(
+            i["fingerprint"] for i in service.anomalies(minutes=60)["incidents"]
+        )
+
+        calls = {"n": 0}
+
+        def fake_cluster(settings, incidents):
+            calls["n"] += 1
+            return [
+                AnomalyGroup(
+                    title="loki subsystem",
+                    summary="same class",
+                    fingerprints=[i.fingerprint for i in incidents],
+                )
+            ]
+
+        monkeypatch.setattr(dashboard, "cluster_incidents", fake_cluster)
+
+        first = service.anomalies(minutes=60)
+        assert calls["n"] == 1
+        groups = first["groups"]
+        assert len(groups) == 1
+        group = groups[0]
+        assert group["title"] == "loki subsystem"
+        assert group["count"] == 2
+        assert sorted(group["fingerprints"]) == fps
+        assert len(group["members"]) == 2
+
+        # Same fingerprint set on the next refresh reuses the cached clustering.
+        service.anomalies(minutes=60)
+        assert calls["n"] == 1
+
+    def test_grouping_degrades_on_codex_failure(self, tmp_path, monkeypatch):
+        import guiltyspark.dashboard as dashboard
+
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "loki"}, line="error alpha"),
+            LogEvent(ts_ns=2, labels={"container": "loki"}, line="error beta"),
+        ]
+        self._fake_loki(monkeypatch, events)
+
+        def boom(*_a, **_k):
+            raise RuntimeError("codex unavailable")
+
+        monkeypatch.setattr(dashboard, "cluster_incidents", boom)
+        service = DashboardService(
+            _settings(tmp_path, dashboard_grouping=True), [_target()]
+        )
+        result = service.anomalies(minutes=60)
+        assert "groups" not in result
+        assert len(result["incidents"]) == 2
+
+    def test_rule_suppresses_matching_incidents_before_clustering(
+        self, tmp_path, monkeypatch
+    ):
+        import guiltyspark.dashboard as dashboard
+
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "loki"}, line="error notifying scheduler"),
+            LogEvent(ts_ns=2, labels={"container": "loki"}, line="error querying storage"),
+        ]
+        self._fake_loki(monkeypatch, events)
+
+        def fail_cluster(*_a, **_k):
+            raise AssertionError("suppressed incidents must not be clustered")
+
+        # Grouping enabled, but the only survivor is a single incident, which
+        # skips Codex entirely — so clustering must never see the scheduler line.
+        monkeypatch.setattr(dashboard, "cluster_incidents", fail_cluster)
+        service = DashboardService(
+            _settings(tmp_path, dashboard_grouping=True), [_target()]
+        )
+        service.add_ignore_rule("loki", r"error .*scheduler", "flap")
+
+        result = service.anomalies(minutes=60)
+        lines = [i["samples"][0] for i in result["incidents"]]
+        assert lines == ["error querying storage"]
+        assert result["ignored_count"] == 1
+
+    def test_rule_service_scope_is_respected(self, tmp_path, monkeypatch):
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "loki"}, line="error connection reset"),
+            LogEvent(ts_ns=2, labels={"container": "other"}, line="error connection reset"),
+        ]
+        self._fake_loki(monkeypatch, events)
+        service = DashboardService(_settings(tmp_path), [_target()])
+        service.add_ignore_rule("loki", r"connection reset", "")
+
+        result = service.anomalies(minutes=60)
+        services = {i["service"] for i in result["incidents"]}
+        assert services == {"other"}  # loki suppressed, other kept
+
+    def test_suggest_pattern_validates_proposal(self, tmp_path, monkeypatch):
+        import guiltyspark.dashboard as dashboard
+
+        service = DashboardService(_settings(tmp_path), [_target()])
+
+        monkeypatch.setattr(
+            dashboard,
+            "propose_pattern",
+            lambda *_a, **_k: {"pattern": "error .*scheduler", "explanation": "safe"},
+        )
+        good = service.suggest_pattern("loki", ["error notifying scheduler"])
+        assert good["pattern"] == "error .*scheduler"
+        assert good["warning"] == ""
+
+        # A too-broad proposal is surfaced with a warning, not silently applied.
+        monkeypatch.setattr(
+            dashboard, "propose_pattern", lambda *_a, **_k: {"pattern": ".*"}
+        )
+        risky = service.suggest_pattern("loki", ["boom"])
+        assert risky["warning"]
+
+    def test_add_ignore_rule_rejects_bad_pattern(self, tmp_path):
+        service = DashboardService(_settings(tmp_path), [_target()])
+        with pytest.raises(ValueError):
+            service.add_ignore_rule("loki", ".*", "")
 
     def test_edited_targets_reflect_live(self, tmp_path):
         service = DashboardService(_settings(tmp_path), [_target()])
@@ -325,5 +499,50 @@ class TestHTTPServer:
     def test_ignore_requires_fingerprint(self, dashboard_server):
         status, body = _request(
             "POST", dashboard_server + "/api/anomalies/ignore", {"note": "x"}
+        )
+        assert status == 400
+
+    def test_ignore_batch_silences_many(self, dashboard_server):
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/ignore-batch",
+            {
+                "anomalies": [
+                    {"fingerprint": "batch1", "service": "loki", "count": 10},
+                    {"fingerprint": "batch2", "service": "loki", "count": 9},
+                    {"fingerprint": "", "service": "skip"},
+                ]
+            },
+        )
+        assert status == 200 and body["ignored"] is True and body["count"] == 2
+
+        status, body = _get(dashboard_server + "/api/anomalies/ignored")
+        fingerprints = {i["fingerprint"] for i in json.loads(body)["ignored"]}
+        assert {"batch1", "batch2"} <= fingerprints
+
+    def test_rule_create_list_delete(self, dashboard_server):
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/rules",
+            {"service": "loki", "pattern": r"error .*scheduler", "note": "flap"},
+        )
+        assert status == 200 and body["created"] is True
+        rule_id = body["id"]
+
+        status, body = _get(dashboard_server + "/api/anomalies/ignored")
+        rule = next(r for r in json.loads(body)["rules"] if r["id"] == rule_id)
+        assert rule["service"] == "loki"
+        assert rule["pattern"] == r"error .*scheduler"
+
+        status, body = _request(
+            "DELETE", dashboard_server + f"/api/anomalies/rules?id={rule_id}"
+        )
+        assert status == 200 and body["deleted"] is True
+
+    def test_rule_rejects_broad_pattern(self, dashboard_server):
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/rules",
+            {"service": "loki", "pattern": ".*"},
         )
         assert status == 400

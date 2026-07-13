@@ -214,6 +214,35 @@ class StateStore:
                 (fingerprint, note, service, level, sample, int(count or 0)),
             )
 
+    def ignore_anomalies(self, anomalies: list[dict]) -> int:
+        """Silence many anomalies in one transaction. Returns the count applied."""
+        rows = [
+            (
+                str(item.get("fingerprint", "")).strip(),
+                str(item.get("note", "")).strip(),
+                str(item.get("service", "")).strip(),
+                str(item.get("level", "")).strip(),
+                str(item.get("sample", "")).strip(),
+                int(item.get("count") or 0),
+            )
+            for item in anomalies
+        ]
+        rows = [row for row in rows if row[0]]
+        if not rows:
+            return 0
+        with self._connect() as db:
+            db.executemany(
+                "insert into ignored_anomalies"
+                "(fingerprint, note, service, level, sample, count) "
+                "values (?, ?, ?, ?, ?, ?) "
+                "on conflict(fingerprint) do update set "
+                "note = excluded.note, service = excluded.service, "
+                "level = excluded.level, sample = excluded.sample, "
+                "count = excluded.count",
+                rows,
+            )
+        return len(rows)
+
     def set_ignored_note(self, fingerprint: str, note: str) -> bool:
         """Update only the triage note of an already-silenced anomaly."""
         with self._connect() as db:
@@ -253,6 +282,40 @@ class StateStore:
             }
             for row in rows
         ]
+
+    # --- pattern silence rules ------------------------------------------
+
+    def add_ignore_rule(self, service: str, pattern: str, note: str = "") -> int:
+        with self._connect() as db:
+            cursor = db.execute(
+                "insert into ignore_rules(service, pattern, note) values (?, ?, ?)",
+                (service, pattern, note),
+            )
+            return int(cursor.lastrowid)
+
+    def list_ignore_rules(self) -> list[dict]:
+        with self._connect() as db:
+            rows = db.execute(
+                "select id, service, pattern, note, created_at "
+                "from ignore_rules order by created_at desc"
+            ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "service": row[1],
+                "pattern": row[2],
+                "note": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
+
+    def delete_ignore_rule(self, rule_id: int) -> bool:
+        with self._connect() as db:
+            cursor = db.execute(
+                "delete from ignore_rules where id = ?", (rule_id,)
+            )
+            return cursor.rowcount > 0
 
     def has_finding(self, finding_hash: str) -> bool:
         with self._connect() as db:
@@ -337,6 +400,14 @@ class StateStore:
                     db.execute(
                         f"alter table ignored_anomalies add column {column} {ddl}"
                     )
+            db.execute(
+                "create table if not exists ignore_rules("
+                "id integer primary key autoincrement, "
+                "service text not null default '', "
+                "pattern text not null, "
+                "note text not null default '', "
+                "created_at text not null default current_timestamp)"
+            )
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)

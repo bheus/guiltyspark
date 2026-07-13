@@ -86,6 +86,7 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
 | `GUILTYSPARK_DASHBOARD_HOST` | Bind address for `guiltyspark dashboard`. Defaults to `0.0.0.0`. |
 | `GUILTYSPARK_DASHBOARD_PORT` | Port for the web dashboard. Defaults to `8343`. |
+| `GUILTYSPARK_DASHBOARD_GROUPING` | When enabled, the dashboard asks Codex to cluster related unassigned anomalies into a single semantic group so an operator can silence a whole class at once, and to propose a **silence pattern** (a service-scoped regex) that suppresses current *and future* variants. Patterns are always operator-reviewed before they take effect — the UI shows the proposal and its live blast radius; nothing is auto-applied. Costs a Codex call when a new anomaly class appears (clustering is cached against the unassigned fingerprint set; count-only changes reuse it) and one per pattern proposal. Requires the `codex` binary. Falls back to the flat list on any Codex error. Defaults to `false`. |
 | `GITHUB_APP_ID` | GitHub App ID. Takes precedence over personal-token authentication. |
 | `GITHUB_APP_INSTALLATION_ID` | Installation ID for the account containing target repositories. |
 | `GITHUB_APP_PRIVATE_KEY` | App private key as literal or `\n`-escaped PEM. |

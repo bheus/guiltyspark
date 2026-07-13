@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from collections import deque
 from dataclasses import asdict, dataclass
@@ -19,10 +20,11 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from guiltyspark.clustering import AnomalyGroup, cluster_incidents, propose_pattern
 from guiltyspark.config import Settings
 from guiltyspark.grouping import group_incidents
 from guiltyspark.loki import LokiClient
-from guiltyspark.models import LogEvent
+from guiltyspark.models import Incident, LogEvent
 from guiltyspark.state import StateStore
 from guiltyspark.targets import (
     VALID_MODES,
@@ -33,6 +35,42 @@ from guiltyspark.targets import (
 
 ANOMALY_LEVELS = {"error", "fatal"}
 TIMELINE_BINS = 60
+# Highest (most severe) first, for picking a group's headline level.
+_SEVERITY_ORDER = ("fatal", "error", "warning", "info")
+# Bounds for operator-reviewed silence patterns. Suppression hides signal, so we
+# reject empty/degenerate regexes even though a human approved them.
+_MAX_PATTERN_LEN = 1000
+_MAX_MATCH_LEN = 2000
+_TOO_BROAD = {"", ".", ".*", ".+", ".*?", ".+?", "^.*$", "^.+$", "(.*)", "(.+)"}
+
+
+def validate_pattern(pattern: str) -> str:
+    """Return a cleaned, compilable, non-degenerate regex or raise ValueError."""
+    cleaned = (pattern or "").strip()
+    if not cleaned:
+        raise ValueError("pattern is required")
+    if len(cleaned) > _MAX_PATTERN_LEN:
+        raise ValueError(f"pattern exceeds {_MAX_PATTERN_LEN} characters")
+    if cleaned in _TOO_BROAD:
+        raise ValueError("pattern is too broad; it would silence unrelated errors")
+    try:
+        re.compile(cleaned)
+    except re.error as exc:
+        raise ValueError(f"pattern is not a valid regular expression: {exc}") from exc
+    return cleaned
+
+
+def _suppressed_by_rule(
+    rules: list[tuple[str, re.Pattern[str]]], service: str, samples: list[str]
+) -> bool:
+    """True if any (service-scoped) rule regex matches one of the sample lines."""
+    for rule_service, regex in rules:
+        if rule_service and rule_service != service:
+            continue
+        for line in samples:
+            if regex.search(line[:_MAX_MATCH_LEN]):
+                return True
+    return False
 
 _MATCHER = re.compile(
     r'([a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*("(?:[^"\\]|\\.)*"|`[^`]*`)'
@@ -120,6 +158,12 @@ class DashboardService:
     def __init__(self, settings: Settings, targets: list[Target] | None = None) -> None:
         self.settings = settings
         self.state = StateStore(settings.state_path)
+        # Codex clustering is expensive; cache it against the set of unassigned
+        # fingerprints so the 60s auto-refresh only re-clusters when a genuinely
+        # new anomaly class appears (count changes reuse the cached mapping).
+        self._cluster_lock = threading.Lock()
+        self._cluster_sig: tuple[str, ...] | None = None
+        self._cluster_groups: list[AnomalyGroup] = []
         # Seed the store from any startup-provided targets, but only while it is
         # empty so live dashboard edits are never clobbered.
         if targets and self.state.count_targets() == 0:
@@ -178,7 +222,53 @@ class DashboardService:
         return {
             "generated_at": _now_iso(),
             "ignored": self.state.list_ignored_anomalies(),
+            "rules": self.state.list_ignore_rules(),
         }
+
+    # --- pattern silence rules ------------------------------------------
+
+    def _compiled_rules(self) -> list[tuple[str, re.Pattern[str]]]:
+        """Live rules, compiled. Invalid regexes are skipped so one bad rule
+        cannot break the anomaly view."""
+        compiled: list[tuple[str, re.Pattern[str]]] = []
+        for rule in self.state.list_ignore_rules():
+            try:
+                compiled.append(
+                    (str(rule.get("service", "")), re.compile(str(rule["pattern"])))
+                )
+            except (re.error, KeyError):
+                continue
+        return compiled
+
+    def suggest_pattern(self, service: str, samples: list) -> dict:
+        """Codex-proposed regex for a class of anomalies. Proposal only — the
+        operator reviews and commits it separately."""
+        lines = [str(item) for item in samples if str(item).strip()]
+        if not lines:
+            raise ValueError("at least one sample line is required")
+        proposal = propose_pattern(self.settings, service, lines)
+        pattern = proposal.get("pattern", "")
+        try:
+            pattern = validate_pattern(pattern)
+            warning = ""
+        except ValueError as exc:
+            # Surface the proposal anyway so the operator can fix it by hand.
+            warning = str(exc)
+        return {
+            "service": service,
+            "pattern": pattern,
+            "explanation": proposal.get("explanation", ""),
+            "warning": warning,
+        }
+
+    def add_ignore_rule(self, service: str, pattern: str, note: str = "") -> dict:
+        cleaned = validate_pattern(pattern)
+        rule_id = self.state.add_ignore_rule(service.strip(), cleaned, note.strip())
+        return {"created": True, "id": rule_id, "pattern": cleaned}
+
+    def delete_ignore_rule(self, rule_id: int) -> dict:
+        removed = self.state.delete_ignore_rule(rule_id)
+        return {"deleted": removed, "id": rule_id}
 
     def ignore_anomaly(
         self,
@@ -200,6 +290,13 @@ class DashboardService:
             count=count,
         )
         return {"ignored": True, "fingerprint": fingerprint}
+
+    def ignore_anomalies_batch(self, anomalies: list) -> dict:
+        if not isinstance(anomalies, list):
+            raise ValueError("anomalies must be a JSON array")
+        items = [item for item in anomalies if isinstance(item, dict)]
+        applied = self.state.ignore_anomalies(items)
+        return {"ignored": True, "count": applied}
 
     def update_ignored_note(self, fingerprint: str, note: str) -> dict:
         if not fingerprint:
@@ -248,17 +345,25 @@ class DashboardService:
             for target in self._targets()
         ]
         ignored = self.state.ignored_fingerprints()
+        rules = self._compiled_rules()
         payload = []
         ignored_count = 0
+        unassigned: list[Incident] = []
+        entry_by_fp: dict[str, dict] = {}
         for incident in incidents:
-            if incident.fingerprint in ignored:
+            if incident.fingerprint in ignored or _suppressed_by_rule(
+                rules, incident.service, incident.samples
+            ):
                 ignored_count += 1
                 continue
             entry = asdict(incident)
             entry["bucket"] = _bucket_for(selectors, incident.labels)
             entry["samples"] = incident.samples[:5]
             payload.append(entry)
-        return {
+            entry_by_fp[incident.fingerprint] = entry
+            if entry["bucket"] == "unassigned":
+                unassigned.append(incident)
+        response = {
             "generated_at": _now_iso(),
             "window_minutes": minutes,
             "total_events": len(events),
@@ -268,6 +373,54 @@ class DashboardService:
             "incidents": payload,
             "timeline": _timeline(errors, start_ns, end_ns),
         }
+        groups = self._grouped_unassigned(unassigned, entry_by_fp)
+        if groups is not None:
+            response["groups"] = groups
+        return response
+
+    def _grouped_unassigned(
+        self, incidents: list[Incident], entry_by_fp: dict[str, dict]
+    ) -> list[dict] | None:
+        """Codex-clustered view of the unassigned incidents, or None when
+        grouping is disabled or unavailable (the UI then falls back to a flat
+        list). A Codex failure degrades silently rather than breaking the view."""
+        if not self.settings.dashboard_grouping or not incidents:
+            return None
+        try:
+            clusters = self._cluster_cached(incidents)
+        except Exception:
+            return None
+        display = []
+        for index, cluster in enumerate(clusters):
+            members = [
+                entry_by_fp[fp] for fp in cluster.fingerprints if fp in entry_by_fp
+            ]
+            if not members:
+                continue
+            display.append(
+                {
+                    "id": f"g{index}",
+                    "title": cluster.title,
+                    "summary": cluster.summary,
+                    "level": _headline_level(members),
+                    "count": sum(m["count"] for m in members),
+                    "last_seen_ns": max(m["last_seen_ns"] for m in members),
+                    "services": sorted({m["service"] for m in members}),
+                    "fingerprints": [m["fingerprint"] for m in members],
+                    "members": members,
+                }
+            )
+        return display
+
+    def _cluster_cached(self, incidents: list[Incident]) -> list[AnomalyGroup]:
+        signature = tuple(sorted(incident.fingerprint for incident in incidents))
+        with self._cluster_lock:
+            if signature == self._cluster_sig:
+                return self._cluster_groups
+            groups = cluster_incidents(self.settings, incidents)
+            self._cluster_sig = signature
+            self._cluster_groups = groups
+            return groups
 
     def _bucket_for(self, labels: dict[str, str]) -> str:
         selectors = [
@@ -284,6 +437,14 @@ def _bucket_for(
         if selector_matches(matchers, labels):
             return target_id
     return "unassigned"
+
+
+def _headline_level(members: list[dict]) -> str:
+    levels = {m["level"] for m in members}
+    for level in _SEVERITY_ORDER:
+        if level in levels:
+            return level
+    return next(iter(levels), "info")
 
 
 def _timeline(events: list[LogEvent], start_ns: int, end_ns: int) -> list[dict]:
@@ -360,6 +521,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         count=_as_int(body.get("count")),
                     )
                 )
+            elif parsed.path == "/api/anomalies/ignore-batch":
+                self._send_json(
+                    self.service.ignore_anomalies_batch(body.get("anomalies", []))
+                )
+            elif parsed.path == "/api/anomalies/suggest-pattern":
+                self._send_json(
+                    self.service.suggest_pattern(
+                        str(body.get("service", "")).strip(),
+                        body.get("samples", []),
+                    )
+                )
+            elif parsed.path == "/api/anomalies/rules":
+                self._send_json(
+                    self.service.add_ignore_rule(
+                        str(body.get("service", "")),
+                        str(body.get("pattern", "")),
+                        str(body.get("note", "")),
+                    )
+                )
             elif parsed.path == "/api/anomalies/note":
                 self._send_json(
                     self.service.update_ignored_note(
@@ -386,6 +566,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.service.unignore_anomaly(
                         query.get("fingerprint", [""])[0].strip()
+                    )
+                )
+            elif parsed.path == "/api/anomalies/rules":
+                self._send_json(
+                    self.service.delete_ignore_rule(
+                        _as_int(query.get("id", [""])[0].strip())
                     )
                 )
             else:

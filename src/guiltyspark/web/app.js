@@ -8,6 +8,7 @@ let windowMinutes = 60;
 let unassignedByFp = {};
 
 const $ = (id) => document.getElementById(id);
+let groupsById = {};
 
 function esc(text) {
   const div = document.createElement("div");
@@ -100,6 +101,59 @@ function renderIncidentList(element, incidents, emptyText, opts = {}) {
     : `<p class="empty-state">${emptyText}</p>`;
 }
 
+function renderGroup(group) {
+  const members = (group.members || [])
+    .map((incident) => renderIncident(incident, { allowIgnore: true }))
+    .join("");
+  const services = (group.services || []).join(", ");
+  const label =
+    group.fingerprints && group.fingerprints.length > 1
+      ? `Silence all ${group.fingerprints.length}`
+      : "Silence";
+  return `
+    <details class="incident incident-group">
+      <summary>
+        ${severityChip(group.level)}
+        <span class="inc-service">${esc(group.title)}</span>
+        <span class="inc-count">×${group.count}</span>
+        <span class="inc-when">last ${fmtNs(group.last_seen_ns)}</span>
+        <span class="inc-actions">
+          <button type="button" class="btn" data-pattern="${esc(group.id)}" title="Silence this class and future variants via a pattern">Silence pattern…</button>
+          <button type="button" class="btn btn-danger" data-ignore-group="${esc((group.fingerprints || []).join(","))}" title="Silence exactly these anomalies now">${label}</button>
+        </span>
+      </summary>
+      <div class="group-body">
+        ${group.summary ? `<p class="group-summary">${esc(group.summary)}</p>` : ""}
+        ${services ? `<p class="group-services">${esc(services)}</p>` : ""}
+        ${renderPatternBox(group)}
+        <div class="group-members">${members}</div>
+      </div>
+    </details>`;
+}
+
+function renderPatternBox(group) {
+  const scope = (group.services || []).length === 1 ? group.services[0] : "";
+  return `
+    <div class="pattern-box" data-pattern-box="${esc(group.id)}" hidden>
+      <div class="pattern-hint">The Monitor proposes a containment pattern. Review it — anything it matches, present or future, will be suppressed. Final authorization is yours, Reclaimer.</div>
+      <label>Service scope <span class="pattern-sub">(blank = any service)</span>
+        <input type="text" data-pattern-service value="${esc(scope)}" spellcheck="false" />
+      </label>
+      <label>Pattern <span class="pattern-sub">(Python regex, matched against each log line)</span>
+        <textarea data-pattern-input rows="2" spellcheck="false" placeholder="Consulting the Monitor…"></textarea>
+      </label>
+      <div class="pattern-explanation" data-pattern-explanation></div>
+      <div class="pattern-preview" data-pattern-preview></div>
+      <label>Triage note <span class="pattern-sub">(optional)</span>
+        <input type="text" data-pattern-note placeholder="Why this class is noise" />
+      </label>
+      <div class="pattern-actions">
+        <button type="button" class="btn btn-danger" data-pattern-create="${esc(group.id)}">Establish rule</button>
+        <button type="button" class="btn" data-pattern-cancel="${esc(group.id)}">Cancel</button>
+      </div>
+    </div>`;
+}
+
 function renderSpark(timeline) {
   const spark = $("spark");
   const tooltip = $("spark-tooltip");
@@ -133,12 +187,22 @@ async function loadAnomalies() {
   const unassignedTile = $("tile-unassigned");
   unassignedTile.textContent = unassigned.length;
   unassignedTile.dataset.zero = String(unassigned.length === 0);
-  renderIncidentList(
-    $("unassigned-list"),
-    unassigned,
-    "None. Every observed anomaly falls within an existing containment protocol. Most satisfactory.",
-    { allowIgnore: true }
-  );
+  const silenceAll = $("silence-all");
+  silenceAll.hidden = unassigned.length === 0;
+  silenceAll.textContent = unassigned.length > 1 ? `Silence all ${unassigned.length}` : "Silence all";
+  const groups = data.groups;
+  groupsById = {};
+  if (groups && groups.length) {
+    groups.forEach((g) => { groupsById[g.id] = g; });
+    $("unassigned-list").innerHTML = groups.map(renderGroup).join("");
+  } else {
+    renderIncidentList(
+      $("unassigned-list"),
+      unassigned,
+      "None. Every observed anomaly falls within an existing containment protocol. Most satisfactory.",
+      { allowIgnore: true }
+    );
+  }
   renderIncidentList(
     $("contained-list"),
     contained,
@@ -218,11 +282,35 @@ async function loadSilenced() {
   if (active && active.matches && active.matches("[data-note-input]")) return;
   const data = await getJSON("/api/anomalies/ignored");
   const list = data.ignored || [];
-  $("silenced-count").textContent =
-    list.length ? `${list.length} suppressed` : "none suppressed";
-  $("silenced-list").innerHTML = list.length
-    ? list.map(renderSilenced).join("")
-    : `<p class="empty-state">Nothing has been silenced. Every anomaly remains under my full attention, Reclaimer.</p>`;
+  const rules = data.rules || [];
+  const total = list.length + rules.length;
+  $("silenced-count").textContent = total ? `${total} suppressed` : "none suppressed";
+  const rulesHtml = rules.length
+    ? `<div class="rules-block">${rules.map(renderRule).join("")}</div>`
+    : "";
+  const listHtml = list.length ? list.map(renderSilenced).join("") : "";
+  $("silenced-list").innerHTML =
+    rulesHtml + listHtml ||
+    `<p class="empty-state">Nothing has been silenced. Every anomaly remains under my full attention, Reclaimer.</p>`;
+}
+
+function renderRule(rule) {
+  const scope = rule.service
+    ? `<span class="inc-service">${esc(rule.service)}</span>`
+    : `<span class="inc-service">any service</span>`;
+  return `
+    <div class="incident rule-row">
+      <div class="rule-head">
+        <span class="rule-tag">PATTERN</span>
+        ${scope}
+        <span class="inc-when">since ${fmtTime(rule.created_at)}</span>
+        <span class="inc-actions">
+          <button type="button" class="btn" data-rule-remove="${esc(rule.id)}">Lift</button>
+        </span>
+      </div>
+      <code class="rule-pattern">${esc(rule.pattern)}</code>
+      ${rule.note ? `<div class="rule-note">${esc(rule.note)}</div>` : ""}
+    </div>`;
 }
 
 function renderSilenced(item) {
@@ -374,25 +462,190 @@ async function guard(action) {
   }
 }
 
+/* ---- pattern silence rules ---- */
+
+function groupSamples(group) {
+  const lines = [];
+  (group.members || []).forEach((m) =>
+    (m.samples || []).forEach((line) => lines.push(line))
+  );
+  return lines;
+}
+
+function patternBox(id) {
+  return $("unassigned-list").querySelector(`[data-pattern-box="${id}"]`);
+}
+
+function updatePatternPreview(box, group) {
+  const value = box.querySelector("[data-pattern-input]").value.trim();
+  const scope = box.querySelector("[data-pattern-service]").value.trim();
+  const out = box.querySelector("[data-pattern-preview]");
+  if (!value) { out.innerHTML = ""; return; }
+  let regex;
+  try {
+    regex = new RegExp(value);
+  } catch (exc) {
+    out.innerHTML = `<span class="pattern-bad">Invalid regex: ${esc(exc.message)}</span>`;
+    return;
+  }
+  const groupFps = new Set(group.fingerprints || []);
+  let inClass = 0;
+  const outside = [];
+  Object.values(unassignedByFp).forEach((inc) => {
+    if (scope && inc.service !== scope) return;
+    if (!(inc.samples || []).some((line) => regex.test(line))) return;
+    if (groupFps.has(inc.fingerprint)) inClass += 1;
+    else outside.push(inc);
+  });
+  const total = inClass + outside.length;
+  let html = `Matches ${total} anomal${total === 1 ? "y" : "ies"} in view — `
+    + `${inClass} in this class`
+    + (outside.length ? `, <span class="pattern-bad">${outside.length} outside</span>` : "")
+    + ". <span class=\"pattern-sub\">Preview is approximate; the rule is applied server-side.</span>";
+  if (outside.length) {
+    html += `<div class="pattern-bad">Would also silence:<br>`
+      + outside
+          .map((inc) =>
+            esc(`${inc.service}: ${((inc.samples && inc.samples[0]) || "").slice(0, 90)}`)
+          )
+          .join("<br>")
+      + "</div>";
+  }
+  out.innerHTML = html;
+}
+
+async function openPatternBox(id) {
+  const group = groupsById[id];
+  const box = patternBox(id);
+  if (!group || !box) return;
+  box.hidden = false;
+  const patternEl = box.querySelector("[data-pattern-input]");
+  const explEl = box.querySelector("[data-pattern-explanation]");
+  patternEl.value = "";
+  patternEl.placeholder = "Consulting the Monitor…";
+  explEl.textContent = "";
+  box.querySelector("[data-pattern-preview]").innerHTML = "";
+  try {
+    const res = await sendJSON("POST", "/api/anomalies/suggest-pattern", {
+      service: box.querySelector("[data-pattern-service]").value.trim(),
+      samples: groupSamples(group),
+    });
+    patternEl.value = res.pattern || "";
+    patternEl.placeholder = "Enter a regex, Reclaimer";
+    explEl.textContent = res.explanation || "";
+    if (res.warning) {
+      explEl.innerHTML +=
+        ` <span class="pattern-bad">The Monitor's proposal needs your correction: ${esc(res.warning)}</span>`;
+    }
+    updatePatternPreview(box, group);
+  } catch (exc) {
+    patternEl.placeholder = "Enter a regex, Reclaimer";
+    explEl.innerHTML =
+      `<span class="pattern-bad">I could not propose a pattern: ${esc(exc.message)}. You may compose one by hand.</span>`;
+  }
+}
+
+async function createRule(id) {
+  const box = patternBox(id);
+  if (!box) return;
+  const pattern = box.querySelector("[data-pattern-input]").value.trim();
+  if (!pattern) return;
+  await sendJSON("POST", "/api/anomalies/rules", {
+    service: box.querySelector("[data-pattern-service]").value.trim(),
+    pattern,
+    note: box.querySelector("[data-pattern-note]").value.trim(),
+  });
+  await Promise.all([loadAnomalies(), loadSilenced()]);
+}
+
+function ignorePayload(fingerprint) {
+  const incident = unassignedByFp[fingerprint] || {};
+  return {
+    fingerprint,
+    service: incident.service || "",
+    level: incident.level || "",
+    count: incident.count || 0,
+    sample: (incident.samples && incident.samples[0]) || "",
+  };
+}
+
+$("unassigned-list").addEventListener("input", (event) => {
+  const box = event.target.closest("[data-pattern-box]");
+  if (!box) return;
+  const group = groupsById[box.dataset.patternBox];
+  if (group) updatePatternPreview(box, group);
+});
+
 $("unassigned-list").addEventListener("click", (event) => {
+  const patternBtn = event.target.closest("button[data-pattern]");
+  if (patternBtn) {
+    event.preventDefault();
+    const details = patternBtn.closest("details");
+    if (details) details.open = true;
+    guard(() => openPatternBox(patternBtn.dataset.pattern));
+    return;
+  }
+  const createBtn = event.target.closest("button[data-pattern-create]");
+  if (createBtn) {
+    event.preventDefault();
+    guard(() => createRule(createBtn.dataset.patternCreate));
+    return;
+  }
+  const cancelBtn = event.target.closest("button[data-pattern-cancel]");
+  if (cancelBtn) {
+    event.preventDefault();
+    const box = patternBox(cancelBtn.dataset.patternCancel);
+    if (box) box.hidden = true;
+    return;
+  }
+  const groupBtn = event.target.closest("button[data-ignore-group]");
+  if (groupBtn) {
+    event.preventDefault();
+    const fingerprints = groupBtn.dataset.ignoreGroup.split(",").filter(Boolean);
+    if (!fingerprints.length) return;
+    const anomalies = fingerprints.map(ignorePayload);
+    guard(async () => {
+      await sendJSON("POST", "/api/anomalies/ignore-batch", { anomalies });
+      await Promise.all([loadAnomalies(), loadSilenced()]);
+    });
+    return;
+  }
   const button = event.target.closest("button[data-ignore]");
   if (!button) return;
   event.preventDefault();
-  const fingerprint = button.dataset.ignore;
-  const incident = unassignedByFp[fingerprint] || {};
   guard(async () => {
-    await sendJSON("POST", "/api/anomalies/ignore", {
-      fingerprint,
-      service: incident.service || "",
-      level: incident.level || "",
-      count: incident.count || 0,
-      sample: (incident.samples && incident.samples[0]) || "",
-    });
+    await sendJSON("POST", "/api/anomalies/ignore", ignorePayload(button.dataset.ignore));
+    await Promise.all([loadAnomalies(), loadSilenced()]);
+  });
+});
+
+$("silence-all").addEventListener("click", (event) => {
+  event.preventDefault();
+  const incidents = Object.values(unassignedByFp);
+  if (!incidents.length) return;
+  if (!window.confirm(
+    `Silence all ${incidents.length} unassigned anomalies? I shall designate every one as noise, Reclaimer, and suppress it from the stream.`
+  )) {
+    return;
+  }
+  const anomalies = incidents.map((incident) => ignorePayload(incident.fingerprint));
+  guard(async () => {
+    await sendJSON("POST", "/api/anomalies/ignore-batch", { anomalies });
     await Promise.all([loadAnomalies(), loadSilenced()]);
   });
 });
 
 $("silenced-list").addEventListener("click", (event) => {
+  const ruleBtn = event.target.closest("button[data-rule-remove]");
+  if (ruleBtn) {
+    event.preventDefault();
+    const id = ruleBtn.dataset.ruleRemove;
+    guard(async () => {
+      await sendJSON("DELETE", `/api/anomalies/rules?id=${encodeURIComponent(id)}`);
+      await Promise.all([loadAnomalies(), loadSilenced()]);
+    });
+    return;
+  }
   const restoreBtn = event.target.closest("button[data-restore]");
   if (restoreBtn) {
     event.preventDefault();
