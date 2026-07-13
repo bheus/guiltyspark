@@ -12,7 +12,14 @@ from guiltyspark.config import Settings
 from guiltyspark.loki import LokiClient
 from guiltyspark.monitor import FleetMonitor, Monitor, RunSummary
 from guiltyspark.remediation import Remediator, load_replay_case
-from guiltyspark.targets import Target, load_targets, load_targets_json
+from guiltyspark.state import StateStore
+from guiltyspark.targets import (
+    Target,
+    load_targets,
+    load_targets_from_store,
+    load_targets_json,
+    target_to_payload,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,12 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings.from_env()
-    if settings.targets_json:
-        targets = load_targets_json(settings.targets_json)
-    elif settings.targets_path:
-        targets = load_targets(settings.targets_path)
-    else:
-        targets = []
+    store = StateStore(settings.state_path)
+    _seed_targets_from_env(settings, store)
+    targets = load_targets_from_store(store)
     if args.command == "doctor":
         return doctor(settings, targets)
     if args.command == "replay":
@@ -75,12 +79,33 @@ def main(argv: list[str] | None = None) -> int:
             _print_summary(summary)
         return 0
     if args.command == "daemon":
-        if targets:
-            asyncio.run(FleetMonitor(settings, targets).run_forever())
+        # Hot-reload targets from the store each cycle so dashboard edits take
+        # effect without a restart. Fall back to the single default monitor
+        # only while the store holds no targets at all.
+        if targets or store.count_targets() > 0:
+            fleet = FleetMonitor(
+                settings, load_targets=lambda: load_targets_from_store(store)
+            )
+            asyncio.run(fleet.run_forever())
         else:
             asyncio.run(Monitor(settings).run_forever())
         return 0
     return 2
+
+
+def _seed_targets_from_env(settings: Settings, store: StateStore) -> None:
+    """Seed the DB from GUILTYSPARK_TARGETS_JSON / file on first run only.
+
+    Once seeded, the DB is authoritative and dashboard edits persist across
+    restarts; the env var no longer overrides stored targets.
+    """
+    if settings.targets_json:
+        env_targets = load_targets_json(settings.targets_json)
+    elif settings.targets_path:
+        env_targets = load_targets(settings.targets_path)
+    else:
+        return
+    store.seed_targets_if_empty([target_to_payload(t) for t in env_targets])
 
 
 def _print_summary(summary: RunSummary) -> None:

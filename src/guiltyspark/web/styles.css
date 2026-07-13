@@ -386,6 +386,126 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 .empty-state { color: var(--ink-faint); font-size: 12.5px; padding: 6px 0; }
 .error-state { color: var(--critical); font-size: 12.5px; padding: 6px 0; font-family: var(--data); }
 
+/* ---- buttons & inline actions ---- */
+
+.btn {
+  font-family: var(--data);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid var(--seam-dim);
+  padding: 3px 12px;
+  cursor: pointer;
+}
+
+.btn:hover { border-color: var(--seam); color: var(--ink); }
+.btn-primary { color: var(--on-eye); background: var(--eye); border-color: var(--eye); font-weight: 700; }
+.btn-primary:hover { color: var(--on-eye); filter: brightness(1.08); }
+.btn-danger:hover { border-color: var(--critical); color: var(--critical); }
+
+.panel-head .btn { margin-left: auto; }
+
+.inc-actions { display: flex; gap: 6px; margin-left: auto; flex: none; }
+.inc-actions .btn { padding: 2px 9px; }
+
+/* ---- protocol (target) editor ---- */
+
+.protocol-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--hull-2);
+  border: 1px solid var(--seam-dim);
+  padding: 10px 14px;
+}
+
+.protocol-id { font-family: var(--data); font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.protocol-repo { font-family: var(--data); font-size: 11.5px; color: var(--ink-dim); }
+.protocol-query {
+  font-family: var(--data);
+  font-size: 11px;
+  color: var(--ink-faint);
+  flex-basis: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.protocol-actions { display: flex; gap: 6px; margin-left: auto; }
+
+.mode-chip {
+  font-family: var(--data);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border: 1px solid var(--seam);
+  color: var(--ink-dim);
+}
+.mode-chip[data-mode="pr"], .mode-chip[data-mode="draft-pr"] { color: var(--serious); border-color: var(--serious); }
+.mode-chip[data-mode="fix"] { color: var(--warning); border-color: var(--warning); }
+.mode-chip[data-mode="observe"] { color: var(--nominal); border-color: var(--nominal); }
+
+.protocol-form {
+  margin-top: 16px;
+  border-top: 1px solid var(--seam-dim);
+  padding-top: 16px;
+}
+
+.protocol-form h3 {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--eye);
+  margin-bottom: 12px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.field-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.field-grid .field-wide { grid-column: 1 / -1; }
+
+.field-grid input, .field-grid select, .field-grid textarea {
+  font-family: var(--data);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--hull);
+  border: 1px solid var(--seam-dim);
+  padding: 6px 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.field-grid input:focus, .field-grid select:focus, .field-grid textarea:focus {
+  outline: 2px solid var(--eye);
+  outline-offset: 1px;
+}
+
+.field-grid textarea { resize: vertical; }
+
+.form-note { color: var(--ink-faint); font-size: 11.5px; margin: 12px 0; }
+.form-actions { display: flex; gap: 8px; }
+
+@media (max-width: 620px) {
+  .field-grid { grid-template-columns: 1fr; }
+}
+
 /* ---- footer ---- */
 
 .footing {

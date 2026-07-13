@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
@@ -180,20 +181,50 @@ class Monitor:
 
 
 class FleetMonitor:
-    def __init__(self, settings: Settings, targets: list[Target]) -> None:
+    """Runs one Monitor per configured target.
+
+    Targets can be supplied as a static list (used by ``once``) or via a
+    ``load_targets`` callable that is re-invoked at the start of every cycle so
+    edits made from the dashboard take effect without a restart.
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        targets: list[Target] | None = None,
+        *,
+        load_targets: Callable[[], list[Target]] | None = None,
+    ) -> None:
         self.settings = settings
-        self.monitors = [Monitor(settings, target) for target in targets]
+        if load_targets is None:
+            snapshot = list(targets or [])
+            load_targets = lambda: snapshot  # noqa: E731 - trivial static loader
+        self._load_targets = load_targets
+        self._monitors: dict[str, tuple[Target, Monitor]] = {}
+
+    def _sync(self) -> list[Monitor]:
+        """Reconcile the live monitor set with the current targets, reusing
+        monitors whose target config is unchanged."""
+        current: dict[str, tuple[Target, Monitor]] = {}
+        for target in self._load_targets():
+            existing = self._monitors.get(target.id)
+            if existing is not None and existing[0] == target:
+                current[target.id] = existing
+            else:
+                current[target.id] = (target, Monitor(self.settings, target))
+        self._monitors = current
+        return [monitor for _, monitor in current.values()]
 
     async def run_once(self) -> list[RunSummary]:
         summaries: list[RunSummary] = []
-        for monitor in self.monitors:
+        for monitor in self._sync():
             summaries.append(await monitor.run_once())
         return summaries
 
     async def run_forever(self) -> None:
         while True:
             started = datetime.now(timezone.utc).isoformat()
-            for monitor in self.monitors:
+            for monitor in self._sync():
                 try:
                     summary = await monitor.run_once()
                     print(

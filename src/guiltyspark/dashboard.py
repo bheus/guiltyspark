@@ -24,7 +24,12 @@ from guiltyspark.grouping import group_incidents
 from guiltyspark.loki import LokiClient
 from guiltyspark.models import LogEvent
 from guiltyspark.state import StateStore
-from guiltyspark.targets import Target
+from guiltyspark.targets import (
+    VALID_MODES,
+    Target,
+    load_targets_from_store,
+    target_to_payload,
+)
 
 ANOMALY_LEVELS = {"error", "fatal"}
 TIMELINE_BINS = 60
@@ -112,13 +117,18 @@ def tail_findings(path: Path, limit: int) -> list[dict]:
 class DashboardService:
     """Assembles the JSON payloads served by the dashboard."""
 
-    def __init__(self, settings: Settings, targets: list[Target]) -> None:
+    def __init__(self, settings: Settings, targets: list[Target] | None = None) -> None:
         self.settings = settings
-        self.targets = targets
         self.state = StateStore(settings.state_path)
-        self._selectors = [
-            (target.id, parse_stream_selector(target.loki_query)) for target in targets
-        ]
+        # Seed the store from any startup-provided targets, but only while it is
+        # empty so live dashboard edits are never clobbered.
+        if targets and self.state.count_targets() == 0:
+            for target in targets:
+                self.state.upsert_target(target.id, target_to_payload(target))
+
+    def _targets(self) -> list[Target]:
+        """Live target set, re-read from the store so edits reflect at once."""
+        return load_targets_from_store(self.state)
 
     def overview(self) -> dict:
         counts = self.state.dashboard_counts()
@@ -133,10 +143,54 @@ class DashboardService:
                     "mode": target.mode,
                     "loki_query": target.loki_query,
                 }
-                for target in self.targets
+                for target in self._targets()
             ],
             "counts": counts,
         }
+
+    # --- target configuration (dashboard-editable) ----------------------
+
+    def list_targets(self) -> dict:
+        """Full target configs for the editor, in the store's canonical form."""
+        return {
+            "generated_at": _now_iso(),
+            "modes": sorted(VALID_MODES),
+            "targets": [target_to_payload(target) for target in self._targets()],
+        }
+
+    def save_target(self, payload: dict) -> dict:
+        """Validate and upsert a single target. Raises ValueError on bad input."""
+        if not isinstance(payload, dict):
+            raise ValueError("target payload must be a JSON object")
+        target = Target.from_dict(payload)
+        self.state.upsert_target(target.id, target_to_payload(target))
+        return {"target": target_to_payload(target)}
+
+    def delete_target(self, target_id: str) -> dict:
+        if not target_id:
+            raise ValueError("target id is required")
+        removed = self.state.delete_target(target_id)
+        return {"deleted": removed, "id": target_id}
+
+    # --- ignored anomalies (silenced noise) -----------------------------
+
+    def ignored_anomalies(self) -> dict:
+        return {
+            "generated_at": _now_iso(),
+            "ignored": self.state.list_ignored_anomalies(),
+        }
+
+    def ignore_anomaly(self, fingerprint: str, note: str = "") -> dict:
+        if not fingerprint:
+            raise ValueError("fingerprint is required")
+        self.state.ignore_anomaly(fingerprint, note)
+        return {"ignored": True, "fingerprint": fingerprint}
+
+    def unignore_anomaly(self, fingerprint: str) -> dict:
+        if not fingerprint:
+            raise ValueError("fingerprint is required")
+        restored = self.state.unignore_anomaly(fingerprint)
+        return {"restored": restored, "fingerprint": fingerprint}
 
     def findings(self, limit: int = 50) -> dict:
         return {
@@ -166,10 +220,19 @@ class DashboardService:
         )
         errors = [event for event in events if event.level in ANOMALY_LEVELS]
         incidents = group_incidents(errors, min_events=1)
+        selectors = [
+            (target.id, parse_stream_selector(target.loki_query))
+            for target in self._targets()
+        ]
+        ignored = self.state.ignored_fingerprints()
         payload = []
+        ignored_count = 0
         for incident in incidents:
+            if incident.fingerprint in ignored:
+                ignored_count += 1
+                continue
             entry = asdict(incident)
-            entry["bucket"] = self._bucket_for(incident.labels)
+            entry["bucket"] = _bucket_for(selectors, incident.labels)
             entry["samples"] = incident.samples[:5]
             payload.append(entry)
         return {
@@ -178,15 +241,26 @@ class DashboardService:
             "total_events": len(events),
             "truncated": len(events) >= self.settings.loki_limit,
             "error_events": len(errors),
+            "ignored_count": ignored_count,
             "incidents": payload,
             "timeline": _timeline(errors, start_ns, end_ns),
         }
 
     def _bucket_for(self, labels: dict[str, str]) -> str:
-        for target_id, matchers in self._selectors:
-            if selector_matches(matchers, labels):
-                return target_id
-        return "unassigned"
+        selectors = [
+            (target.id, parse_stream_selector(target.loki_query))
+            for target in self._targets()
+        ]
+        return _bucket_for(selectors, labels)
+
+
+def _bucket_for(
+    selectors: list[tuple[str, list[LabelMatcher]]], labels: dict[str, str]
+) -> str:
+    for target_id, matchers in selectors:
+        if selector_matches(matchers, labels):
+            return target_id
+    return "unassigned"
 
 
 def _timeline(events: list[LogEvent], start_ns: int, end_ns: int) -> list[dict]:
@@ -237,10 +311,68 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.service.anomalies(_bounded(query, "minutes", 60, 1440))
                 )
+            elif parsed.path == "/api/anomalies/ignored":
+                self._send_json(self.service.ignored_anomalies())
+            elif parsed.path == "/api/targets":
+                self._send_json(self.service.list_targets())
             else:
                 self._send_static(parsed.path)
         except Exception as exc:  # surface backend failures to the UI as JSON
             self._send_json({"error": str(exc)}, status=502)
+
+    def do_POST(self) -> None:  # noqa: N802 (http.server API)
+        parsed = urlparse(self.path)
+        try:
+            body = self._read_json_body()
+            if parsed.path == "/api/targets":
+                self._send_json(self.service.save_target(body))
+            elif parsed.path == "/api/anomalies/ignore":
+                self._send_json(
+                    self.service.ignore_anomaly(
+                        str(body.get("fingerprint", "")).strip(),
+                        str(body.get("note", "")).strip(),
+                    )
+                )
+            else:
+                self.send_error(404)
+        except ValueError as exc:  # validation / malformed request
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, status=502)
+
+    def do_DELETE(self) -> None:  # noqa: N802 (http.server API)
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        try:
+            if parsed.path == "/api/targets":
+                self._send_json(
+                    self.service.delete_target(query.get("id", [""])[0].strip())
+                )
+            elif parsed.path == "/api/anomalies/ignore":
+                self._send_json(
+                    self.service.unignore_anomaly(
+                        query.get("fingerprint", [""])[0].strip()
+                    )
+                )
+            else:
+                self.send_error(404)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, status=502)
+
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"request body is not valid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be a JSON object")
+        return payload
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass

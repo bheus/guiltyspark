@@ -50,14 +50,60 @@
       <h2 id="unassigned-title">Unassigned anomalies</h2>
       <span class="panel-tag">outside all containment protocols</span>
     </div>
-    <p class="panel-note">These malfunctions match no configured target. I cannot prepare corrective measures for them until you assign a protocol, Reclaimer.</p>
+    <p class="panel-note">These malfunctions match no configured target. I cannot prepare corrective measures for them until you assign a protocol, Reclaimer — or, should you judge them mere noise, you may silence them.</p>
     <div id="unassigned-list" class="incident-list"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="silenced-title">
+    <div class="panel-head">
+      <h2 id="silenced-title">Silenced anomalies</h2>
+      <span class="panel-tag" id="silenced-count">—</span>
+    </div>
+    <p class="panel-note">Anomalies you have designated as noise. I have suppressed them from the stream, as instructed. Restore any one and I shall resume cataloguing it.</p>
+    <div id="silenced-list" class="incident-list"></div>
   </section>
 
   <section class="panel" aria-labelledby="contained-title">
     <div class="panel-head"><h2 id="contained-title">Contained anomalies</h2></div>
     <p class="panel-note">Anomalies matched to a configured containment protocol.</p>
     <div id="contained-list" class="incident-list"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="protocols-title">
+    <div class="panel-head">
+      <h2 id="protocols-title">Containment protocols</h2>
+      <button type="button" id="protocol-add" class="btn btn-primary">Establish protocol</button>
+    </div>
+    <p class="panel-note">The installation's configured targets. You may amend, establish, or decommission a protocol here, Reclaimer; I shall adopt your directives within the cycle. Final authorization remains yours.</p>
+    <div id="protocols-error" class="error-state" hidden></div>
+    <div id="protocols-list" class="record-list"></div>
+
+    <form id="protocol-form" class="protocol-form" hidden>
+      <h3 id="protocol-form-title">Establish protocol</h3>
+      <div class="field-grid">
+        <label>Designation (id)<input name="id" autocomplete="off" spellcheck="false" required></label>
+        <label>Operational mode
+          <select name="mode">
+            <option value="observe">observe</option>
+            <option value="fix">fix</option>
+            <option value="draft-pr">draft-pr</option>
+            <option value="pr">pr</option>
+          </select>
+        </label>
+        <label>Archive endpoint (loki_url)<input name="loki_url" autocomplete="off" spellcheck="false" required></label>
+        <label>GitHub repository (owner/name)<input name="github_repo" autocomplete="off" spellcheck="false" required></label>
+        <label class="field-wide">Log stream selector (loki_query)<input name="loki_query" autocomplete="off" spellcheck="false" required></label>
+        <label>Base branch<input name="base_branch" autocomplete="off" spellcheck="false" placeholder="main"></label>
+        <label>Max changed files<input name="max_changed_files" type="number" min="1" value="12"></label>
+        <label class="field-wide">Verification sequence (test_commands, one per line)<textarea name="test_commands" rows="2" spellcheck="false"></textarea></label>
+        <label class="field-wide">Permitted paths (allowed_paths, one per line)<textarea name="allowed_paths" rows="2" spellcheck="false"></textarea></label>
+      </div>
+      <p class="form-note">A protocol beyond <em>observe</em> requires both a verification sequence and permitted paths before I may act.</p>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Commit protocol</button>
+        <button type="button" id="protocol-cancel" class="btn">Cancel</button>
+      </div>
+    </form>
   </section>
 
   <div class="columns">
