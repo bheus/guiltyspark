@@ -162,6 +162,13 @@ class Monitor:
                 result.details[-8000:] if result.status == "failed" else "",
             )
             if result.status == "pr-opened" and result.pr_url:
+                if not self.email_notifier.enabled:
+                    print(
+                        "email_notify_skipped reason=notifier_disabled "
+                        "(set RESEND_API_KEY, GUILTYSPARK_NOTIFY_EMAIL_FROM, "
+                        f"GUILTYSPARK_NOTIFY_EMAIL_TO) fingerprint={finding.fingerprint}",
+                        flush=True,
+                    )
                 try:
                     self.email_notifier.send_pr_opened(
                         finding, result.pr_url, self.target.github_repo

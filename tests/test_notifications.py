@@ -28,6 +28,11 @@ class EmailNotifierTests(unittest.TestCase):
             notifier.send_pr_opened(finding(), "https://pr", "owner/app")
         urlopen.assert_not_called()
 
+    def test_disabled_when_credentials_blank(self) -> None:
+        # The deployed failure mode: the var is wired through but empty.
+        notifier = EmailNotifier(api_key="", sender="a@b.com", recipient="c@d.com")
+        self.assertFalse(notifier.enabled)
+
     def test_send_posts_monitor_voiced_email_to_resend(self) -> None:
         notifier = EmailNotifier(
             api_key="re_key",
