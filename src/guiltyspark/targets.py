@@ -5,7 +5,10 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from guiltyspark.state import StateStore
 
 
 VALID_MODES = {"observe", "fix", "draft-pr", "pr"}
@@ -70,6 +73,43 @@ class Target:
             max_changed_files=max_changed_files,
             local_repo=Path(local_repo_value).expanduser() if local_repo_value else None,
         )
+
+
+def target_to_payload(target: Target) -> dict[str, Any]:
+    """Serialize a Target back into a plain dict accepted by ``from_dict``.
+
+    Used to persist targets in the state store and to hand the full config to
+    the dashboard editor.
+    """
+    return {
+        "id": target.id,
+        "loki_url": target.loki_url,
+        "loki_query": target.loki_query,
+        "github_repo": target.github_repo,
+        "base_branch": target.base_branch,
+        "mode": target.mode,
+        "test_commands": list(target.test_commands),
+        "allowed_paths": list(target.allowed_paths),
+        "max_changed_files": target.max_changed_files,
+        "local_repo": str(target.local_repo) if target.local_repo is not None else "",
+    }
+
+
+def load_targets_from_store(store: "StateStore") -> list[Target]:
+    """Load and validate the DB-backed targets. Invalid rows are skipped so a
+    single bad edit cannot take the whole fleet offline."""
+    targets: list[Target] = []
+    seen: set[str] = set()
+    for payload in store.list_target_payloads():
+        try:
+            target = Target.from_dict(payload)
+        except (ValueError, KeyError, TypeError):
+            continue
+        if target.id in seen:
+            continue
+        seen.add(target.id)
+        targets.append(target)
+    return targets
 
 
 def load_targets(path: Path) -> list[Target]:

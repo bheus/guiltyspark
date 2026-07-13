@@ -33,6 +33,18 @@ async function getJSON(path) {
   return payload;
 }
 
+async function sendJSON(method, path, body) {
+  const opts = { method };
+  if (body !== undefined) {
+    opts.headers = { "Content-Type": "application/json" };
+    opts.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, opts);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
+}
+
 /* ---- masthead / uplink ---- */
 
 function setUplink(ok, detail) {
@@ -61,10 +73,13 @@ function severityChip(level) {
   return `<span class="sev sev-${esc(level)}">${esc(level)}</span>`;
 }
 
-function renderIncident(incident) {
+function renderIncident(incident, opts = {}) {
   const samples = (incident.samples || [])
     .map((line) => `<div>${esc(line)}</div>`)
     .join("");
+  const tail = opts.allowIgnore
+    ? `<span class="inc-actions"><button type="button" class="btn btn-danger" data-ignore="${esc(incident.fingerprint)}" title="Designate this anomaly as noise">Silence</button></span>`
+    : `<span class="inc-bucket">${esc(incident.bucket)}</span>`;
   return `
     <details class="incident">
       <summary>
@@ -72,15 +87,15 @@ function renderIncident(incident) {
         <span class="inc-service">${esc(incident.service)}</span>
         <span class="inc-count">×${incident.count}</span>
         <span class="inc-when">last ${fmtNs(incident.last_seen_ns)}</span>
-        <span class="inc-bucket">${esc(incident.bucket)}</span>
+        ${tail}
       </summary>
       <div class="inc-samples">${samples}</div>
     </details>`;
 }
 
-function renderIncidentList(element, incidents, emptyText) {
+function renderIncidentList(element, incidents, emptyText, opts = {}) {
   element.innerHTML = incidents.length
-    ? incidents.map(renderIncident).join("")
+    ? incidents.map((incident) => renderIncident(incident, opts)).join("")
     : `<p class="empty-state">${emptyText}</p>`;
 }
 
@@ -118,7 +133,8 @@ async function loadAnomalies() {
   renderIncidentList(
     $("unassigned-list"),
     unassigned,
-    "None. Every observed anomaly falls within an existing containment protocol. Most satisfactory."
+    "None. Every observed anomaly falls within an existing containment protocol. Most satisfactory.",
+    { allowIgnore: true }
   );
   renderIncidentList(
     $("contained-list"),
@@ -191,6 +207,105 @@ async function loadMeasures() {
     : `<p class="empty-state">No corrective measures have been required. The installation functions within tolerances.</p>`;
 }
 
+/* ---- silenced anomalies ---- */
+
+async function loadSilenced() {
+  const data = await getJSON("/api/anomalies/ignored");
+  const list = data.ignored || [];
+  $("silenced-count").textContent =
+    list.length ? `${list.length} suppressed` : "none suppressed";
+  $("silenced-list").innerHTML = list.length
+    ? list.map(renderSilenced).join("")
+    : `<p class="empty-state">Nothing has been silenced. Every anomaly remains under my full attention, Reclaimer.</p>`;
+}
+
+function renderSilenced(item) {
+  const note = item.note
+    ? `<span class="inc-count">${esc(item.note)}</span>`
+    : "";
+  return `
+    <div class="protocol-row">
+      <span class="inc-service">${esc(item.fingerprint)}</span>
+      ${note}
+      <span class="inc-when">silenced ${fmtTime(item.created_at)}</span>
+      <span class="protocol-actions">
+        <button type="button" class="btn" data-restore="${esc(item.fingerprint)}">Restore</button>
+      </span>
+    </div>`;
+}
+
+/* ---- containment protocols (target editor) ---- */
+
+let protocols = [];
+
+async function loadProtocols() {
+  const data = await getJSON("/api/targets");
+  protocols = data.targets || [];
+  $("protocols-list").innerHTML = protocols.length
+    ? protocols.map(renderProtocol).join("")
+    : `<p class="empty-state">No containment protocols are established. The installation is unmonitored until you establish one, Reclaimer.</p>`;
+}
+
+function renderProtocol(target) {
+  return `
+    <div class="protocol-row">
+      <span class="protocol-id">${esc(target.id)}</span>
+      <span class="mode-chip" data-mode="${esc(target.mode)}">${esc(target.mode)}</span>
+      <span class="protocol-repo">${esc(target.github_repo)}</span>
+      <span class="protocol-actions">
+        <button type="button" class="btn" data-edit="${esc(target.id)}">Amend</button>
+        <button type="button" class="btn btn-danger" data-remove="${esc(target.id)}">Decommission</button>
+      </span>
+      <span class="protocol-query">${esc(target.loki_query)}</span>
+    </div>`;
+}
+
+function openProtocolForm(target) {
+  const form = $("protocol-form");
+  const editing = Boolean(target);
+  $("protocol-form-title").textContent = editing
+    ? `Amend protocol · ${target.id}`
+    : "Establish protocol";
+  form.elements.id.value = target ? target.id : "";
+  form.elements.id.readOnly = editing;
+  form.elements.mode.value = target ? target.mode : "observe";
+  form.elements.loki_url.value = target ? target.loki_url : "";
+  form.elements.github_repo.value = target ? target.github_repo : "";
+  form.elements.loki_query.value = target ? target.loki_query : "";
+  form.elements.base_branch.value = target ? target.base_branch : "main";
+  form.elements.max_changed_files.value = target ? target.max_changed_files : 12;
+  form.elements.test_commands.value = target ? (target.test_commands || []).join("\n") : "";
+  form.elements.allowed_paths.value = target ? (target.allowed_paths || []).join("\n") : "";
+  setProtocolError("");
+  form.hidden = false;
+  form.elements.id.focus();
+}
+
+function protocolFormPayload(form) {
+  const lines = (value) =>
+    String(value || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  return {
+    id: form.elements.id.value.trim(),
+    mode: form.elements.mode.value,
+    loki_url: form.elements.loki_url.value.trim(),
+    github_repo: form.elements.github_repo.value.trim(),
+    loki_query: form.elements.loki_query.value.trim(),
+    base_branch: form.elements.base_branch.value.trim() || "main",
+    max_changed_files: Number(form.elements.max_changed_files.value) || 12,
+    test_commands: lines(form.elements.test_commands.value),
+    allowed_paths: lines(form.elements.allowed_paths.value),
+  };
+}
+
+function setProtocolError(message) {
+  const box = $("protocols-error");
+  box.textContent = message;
+  box.hidden = !message;
+}
+
 /* ---- orchestration ---- */
 
 async function refresh() {
@@ -199,6 +314,8 @@ async function refresh() {
     loadOverview(),
     loadFindings(),
     loadMeasures(),
+    loadSilenced(),
+    loadProtocols(),
   ]);
   const anomalyResult = results[0];
   if (anomalyResult.status === "rejected") {
@@ -220,6 +337,80 @@ $("window-picker").addEventListener("click", (event) => {
     el.classList.toggle("active", el === button)
   );
   loadAnomalies().catch((exc) => setUplink(false, exc.message));
+});
+
+/* ---- interactions: silence / restore / protocols ---- */
+
+async function guard(action) {
+  try {
+    await action();
+  } catch (exc) {
+    setUplink(false, exc.message);
+  }
+}
+
+$("unassigned-list").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-ignore]");
+  if (!button) return;
+  event.preventDefault();
+  const fingerprint = button.dataset.ignore;
+  guard(async () => {
+    await sendJSON("POST", "/api/anomalies/ignore", { fingerprint });
+    await Promise.all([loadAnomalies(), loadSilenced()]);
+  });
+});
+
+$("silenced-list").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-restore]");
+  if (!button) return;
+  event.preventDefault();
+  const fingerprint = button.dataset.restore;
+  guard(async () => {
+    await sendJSON(
+      "DELETE",
+      `/api/anomalies/ignore?fingerprint=${encodeURIComponent(fingerprint)}`
+    );
+    await Promise.all([loadAnomalies(), loadSilenced()]);
+  });
+});
+
+$("protocols-list").addEventListener("click", (event) => {
+  const editBtn = event.target.closest("button[data-edit]");
+  if (editBtn) {
+    const target = protocols.find((item) => item.id === editBtn.dataset.edit);
+    if (target) openProtocolForm(target);
+    return;
+  }
+  const removeBtn = event.target.closest("button[data-remove]");
+  if (!removeBtn) return;
+  const id = removeBtn.dataset.remove;
+  if (!window.confirm(`Decommission containment protocol "${id}"? I shall cease monitoring its target.`)) {
+    return;
+  }
+  guard(async () => {
+    await sendJSON("DELETE", `/api/targets?id=${encodeURIComponent(id)}`);
+    await Promise.all([loadProtocols(), loadOverview(), loadAnomalies()]);
+  });
+});
+
+$("protocol-add").addEventListener("click", () => openProtocolForm(null));
+$("protocol-cancel").addEventListener("click", () => {
+  $("protocol-form").hidden = true;
+});
+
+$("protocol-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = protocolFormPayload(event.target);
+  try {
+    await sendJSON("POST", "/api/targets", payload);
+  } catch (exc) {
+    setProtocolError(`I regret I cannot commit this protocol, Reclaimer: ${exc.message}`);
+    return;
+  }
+  $("protocol-form").hidden = true;
+  await Promise.all([loadProtocols(), loadOverview(), loadAnomalies()]).catch((exc) =>
+    setUplink(false, exc.message)
+  );
 });
 
 refresh();

@@ -80,8 +80,8 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_CODEX_PATH` | Codex CLI binary. Defaults to `codex`. |
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
 | `GUILTYSPARK_PR_MODE` | `off`, `plan`, or `branch`. The scaffold defaults to `off`. |
-| `GUILTYSPARK_TARGETS_PATH` | Optional TOML file mapping Loki queries to GitHub repositories. |
-| `GUILTYSPARK_TARGETS_JSON` | JSON target list, intended for Portainer stack configuration. |
+| `GUILTYSPARK_TARGETS_PATH` | Optional TOML file mapping Loki queries to GitHub repositories. Seeds the target store on first run only; the DB is authoritative thereafter. |
+| `GUILTYSPARK_TARGETS_JSON` | JSON target list, intended for Portainer stack configuration. Seeds the target store on first run only; edit targets from the dashboard afterward. |
 | `GUILTYSPARK_REMEDIATION_ROOT` | Parent directory for short-lived isolated clones. |
 | `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
 | `GUILTYSPARK_DASHBOARD_HOST` | Bind address for `guiltyspark dashboard`. Defaults to `0.0.0.0`. |
@@ -118,7 +118,18 @@ Target modes are deliberately progressive:
 
 Production can supply the same structure as a JSON list through
 `GUILTYSPARK_TARGETS_JSON`; this is the preferred Portainer configuration path and
-takes precedence over the local TOML file. For private repositories and PR modes
+takes precedence over the local TOML file.
+
+Targets are stored in the SQLite state database and are editable from the dashboard
+(see below). `GUILTYSPARK_TARGETS_JSON` / `GUILTYSPARK_TARGETS_PATH` **seed** that
+store once, on first run while it holds no targets; after that the database is
+authoritative and dashboard edits persist across restarts. Changing the env var later
+has no effect unless the store is empty, and deleting a seeded target from the
+dashboard is not undone by a restart. The daemon re-reads targets from the store at
+the start of every poll cycle, so edits take effect within one interval without a
+restart.
+
+For private repositories and PR modes
 mode, prefer a GitHub App installed only on the configured repositories. Set
 `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and either `GITHUB_APP_PRIVATE_KEY`
 or `GITHUB_APP_PRIVATE_KEY_FILE`. GuiltySpark mints and caches short-lived
@@ -181,10 +192,23 @@ target whose stream selector matches its labels; anything that matches no config
 target is surfaced as an **unassigned anomaly**, so errors outside your containment
 protocols are still visible.
 
-The page is static HTML/JS that talks only to the JSON API (`/api/overview`,
-`/api/findings`, `/api/remediations`, `/api/anomalies?minutes=N`), so a richer
-frontend (e.g. Vue) can replace it later without backend changes. The dashboard is
-read-only and unauthenticated — keep it on your LAN.
+The dashboard is also the control surface for configuration:
+
+- **Containment protocols** — add, amend, or decommission targets. Edits are validated
+  with the same rules as the config file, written to the state store, and picked up by
+  the daemon on its next cycle.
+- **Silence noise** — an unassigned anomaly you judge to be noise can be silenced; it is
+  suppressed from the stream (keyed by its incident fingerprint) and listed under
+  **Silenced anomalies**, where it can be restored.
+
+The page is static HTML/JS that talks only to the JSON API. Read endpoints:
+`/api/overview`, `/api/findings`, `/api/remediations`, `/api/anomalies?minutes=N`,
+`/api/targets`, `/api/anomalies/ignored`. Write endpoints: `POST`/`DELETE
+/api/targets`, `POST`/`DELETE /api/anomalies/ignore`. A richer frontend (e.g. Vue) can
+replace the client later without backend changes.
+
+The dashboard is **unauthenticated**, and it can now modify configuration and trigger
+target changes. Keep it on a trusted LAN and do not expose it to the public internet.
 
 ## Notes On Auth
 

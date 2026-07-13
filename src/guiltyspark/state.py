@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -134,6 +135,95 @@ class StateStore:
             "prs_opened": int(prs_opened),
         }
 
+    # --- targets (DB-backed, editable from the dashboard) ---------------
+
+    def list_target_payloads(self) -> list[dict]:
+        """Return stored target payloads, ordered by id."""
+        with self._connect() as db:
+            rows = db.execute(
+                "select payload from targets order by id"
+            ).fetchall()
+        payloads: list[dict] = []
+        for (raw,) in rows:
+            try:
+                payloads.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        return payloads
+
+    def count_targets(self) -> int:
+        with self._connect() as db:
+            return int(db.execute("select count(*) from targets").fetchone()[0])
+
+    def upsert_target(self, target_id: str, payload: dict) -> None:
+        with self._connect() as db:
+            db.execute(
+                "insert into targets(id, payload, updated_at) values (?, ?, current_timestamp) "
+                "on conflict(id) do update set payload = excluded.payload, "
+                "updated_at = current_timestamp",
+                (target_id, json.dumps(payload, sort_keys=True)),
+            )
+
+    def delete_target(self, target_id: str) -> bool:
+        with self._connect() as db:
+            cursor = db.execute("delete from targets where id = ?", (target_id,))
+            return cursor.rowcount > 0
+
+    def seed_targets_if_empty(self, payloads: list[dict]) -> bool:
+        """Seed the targets table from env/file once, guarded so a later web
+        deletion is never undone by a restart. Returns True if seeding ran."""
+        with self._connect() as db:
+            already = db.execute(
+                "select 1 from cursors where key = 'targets_seeded'"
+            ).fetchone()
+            if already is not None:
+                return False
+            for payload in payloads:
+                target_id = str(payload.get("id", "")).strip()
+                if not target_id:
+                    continue
+                db.execute(
+                    "insert or ignore into targets(id, payload) values (?, ?)",
+                    (target_id, json.dumps(payload, sort_keys=True)),
+                )
+            db.execute(
+                "insert or ignore into cursors(key, value) values ('targets_seeded', '1')"
+            )
+        return True
+
+    # --- ignored anomalies (noise the operator has silenced) ------------
+
+    def ignore_anomaly(self, fingerprint: str, note: str = "") -> None:
+        with self._connect() as db:
+            db.execute(
+                "insert into ignored_anomalies(fingerprint, note) values (?, ?) "
+                "on conflict(fingerprint) do update set note = excluded.note",
+                (fingerprint, note),
+            )
+
+    def unignore_anomaly(self, fingerprint: str) -> bool:
+        with self._connect() as db:
+            cursor = db.execute(
+                "delete from ignored_anomalies where fingerprint = ?", (fingerprint,)
+            )
+            return cursor.rowcount > 0
+
+    def ignored_fingerprints(self) -> set[str]:
+        with self._connect() as db:
+            rows = db.execute("select fingerprint from ignored_anomalies").fetchall()
+        return {str(row[0]) for row in rows}
+
+    def list_ignored_anomalies(self) -> list[dict]:
+        with self._connect() as db:
+            rows = db.execute(
+                "select fingerprint, note, created_at from ignored_anomalies "
+                "order by created_at desc"
+            ).fetchall()
+        return [
+            {"fingerprint": row[0], "note": row[1], "created_at": row[2]}
+            for row in rows
+        ]
+
     def has_finding(self, finding_hash: str) -> bool:
         with self._connect() as db:
             row = db.execute("select 1 from findings where finding_hash = ?", (finding_hash,)).fetchone()
@@ -186,6 +276,18 @@ class StateStore:
                 "created_at text not null default current_timestamp, "
                 "updated_at text not null default current_timestamp, "
                 "primary key(target_id, fingerprint))"
+            )
+            db.execute(
+                "create table if not exists targets("
+                "id text primary key, "
+                "payload text not null, "
+                "updated_at text not null default current_timestamp)"
+            )
+            db.execute(
+                "create table if not exists ignored_anomalies("
+                "fingerprint text primary key, "
+                "note text not null default '', "
+                "created_at text not null default current_timestamp)"
             )
 
     def _connect(self) -> sqlite3.Connection:

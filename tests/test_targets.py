@@ -2,7 +2,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from guiltyspark.targets import load_targets, load_targets_json
+from guiltyspark.state import StateStore
+from guiltyspark.targets import (
+    Target,
+    load_targets,
+    load_targets_from_store,
+    load_targets_json,
+    target_to_payload,
+)
 
 
 class TargetConfigTests(unittest.TestCase):
@@ -85,6 +92,40 @@ mode = "fix"
         self.assertEqual(len(targets), 1)
         self.assertEqual(targets[0].id, "worker")
         self.assertEqual(targets[0].mode, "observe")
+
+    def test_payload_round_trips_through_from_dict(self) -> None:
+        original = Target.from_dict(
+            {
+                "id": "worker",
+                "loki_url": "http://loki:3100",
+                "loki_query": '{container="worker"}',
+                "github_repo": "example/worker",
+                "mode": "pr",
+                "test_commands": ["pytest"],
+                "allowed_paths": ["src", "tests"],
+                "max_changed_files": 5,
+            }
+        )
+        rebuilt = Target.from_dict(target_to_payload(original))
+        self.assertEqual(original, rebuilt)
+
+    def test_load_from_store_skips_invalid_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "state.sqlite3")
+            store.upsert_target(
+                "good",
+                {
+                    "id": "good",
+                    "loki_url": "http://loki",
+                    "loki_query": "{a=1}",
+                    "github_repo": "owner/good",
+                },
+            )
+            # Missing required github_repo -> must be skipped, not fatal.
+            store.upsert_target("bad", {"id": "bad", "loki_query": "{b=2}"})
+
+            targets = load_targets_from_store(store)
+            self.assertEqual([target.id for target in targets], ["good"])
 
     def test_pr_mode_is_supported(self) -> None:
         targets = load_targets_json(

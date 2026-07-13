@@ -15,6 +15,7 @@ from guiltyspark.dashboard import (
     selector_matches,
     tail_findings,
 )
+from guiltyspark.models import LogEvent
 from guiltyspark.state import StateStore
 from guiltyspark.targets import Target
 
@@ -122,6 +123,48 @@ class TestDashboardService:
         assert service._bucket_for({"container": "abraham-trading"}) == "abraham"
         assert service._bucket_for({"container": "store-crawler"}) == "unassigned"
 
+    def test_ignored_incidents_are_filtered(self, tmp_path, monkeypatch):
+        import guiltyspark.dashboard as dashboard
+
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "noisy"}, line="error boom"),
+            LogEvent(ts_ns=2, labels={"container": "noisy"}, line="error boom"),
+        ]
+
+        class FakeLoki:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def query_range(self, *args, **kwargs):
+                return events
+
+        monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
+        service = DashboardService(_settings(tmp_path), [_target()])
+
+        first = service.anomalies(minutes=60)
+        assert len(first["incidents"]) == 1
+        assert first["ignored_count"] == 0
+        fingerprint = first["incidents"][0]["fingerprint"]
+
+        service.state.ignore_anomaly(fingerprint, "noise")
+        second = service.anomalies(minutes=60)
+        assert second["incidents"] == []
+        assert second["ignored_count"] == 1
+
+    def test_edited_targets_reflect_live(self, tmp_path):
+        service = DashboardService(_settings(tmp_path), [_target()])
+        service.save_target(
+            {
+                "id": "store",
+                "loki_url": "http://loki.invalid:3100",
+                "loki_query": '{container="store-crawler"}',
+                "github_repo": "owner/store",
+            }
+        )
+        assert service._bucket_for({"container": "store-crawler"}) == "store"
+        service.delete_target("store")
+        assert service._bucket_for({"container": "store-crawler"}) == "unassigned"
+
     def test_overview_counts(self, tmp_path):
         settings = _settings(tmp_path)
         state = StateStore(settings.state_path)
@@ -155,6 +198,18 @@ def _get(url: str) -> tuple[int, bytes]:
         return exc.code, exc.read()
 
 
+def _request(method: str, url: str, body: dict | None = None) -> tuple[int, dict]:
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = urllib.request.Request(url, data=data, method=method)
+    if data is not None:
+        request.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+
 class TestHTTPServer:
     def test_serves_index(self, dashboard_server):
         status, body = _get(dashboard_server + "/")
@@ -179,3 +234,54 @@ class TestHTTPServer:
     def test_no_path_traversal(self, dashboard_server):
         status, _ = _get(dashboard_server + "/..%2Fdashboard.py")
         assert status == 404
+
+    def test_target_create_list_delete(self, dashboard_server):
+        payload = {
+            "id": "store",
+            "loki_url": "http://loki.invalid:3100",
+            "loki_query": '{container="store-crawler"}',
+            "github_repo": "owner/store",
+        }
+        status, body = _request("POST", dashboard_server + "/api/targets", payload)
+        assert status == 200
+        assert body["target"]["id"] == "store"
+
+        status, body = _get(dashboard_server + "/api/targets")
+        ids = [t["id"] for t in json.loads(body)["targets"]]
+        assert "store" in ids
+
+        status, body = _request(
+            "DELETE", dashboard_server + "/api/targets?id=store"
+        )
+        assert status == 200 and body["deleted"] is True
+
+    def test_invalid_target_rejected(self, dashboard_server):
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/targets",
+            {"id": "broken", "loki_url": "http://x"},
+        )
+        assert status == 400
+        assert "error" in body
+
+    def test_ignore_and_restore_anomaly(self, dashboard_server):
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/ignore",
+            {"fingerprint": "deadbeef", "note": "noise"},
+        )
+        assert status == 200 and body["ignored"] is True
+
+        status, body = _get(dashboard_server + "/api/anomalies/ignored")
+        assert "deadbeef" in {i["fingerprint"] for i in json.loads(body)["ignored"]}
+
+        status, body = _request(
+            "DELETE", dashboard_server + "/api/anomalies/ignore?fingerprint=deadbeef"
+        )
+        assert status == 200 and body["restored"] is True
+
+    def test_ignore_requires_fingerprint(self, dashboard_server):
+        status, body = _request(
+            "POST", dashboard_server + "/api/anomalies/ignore", {"note": "x"}
+        )
+        assert status == 400
