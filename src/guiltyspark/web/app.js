@@ -258,16 +258,34 @@ async function loadFindings() {
 
 /* ---- remediations ---- */
 
+// Live disposition of the opened PR, voiced for the operator. `pr_state` comes
+// from GitHub; absent when the measure never reached a PR.
+const PR_DISPOSITION = {
+  merged: { label: "Integrated", cls: "sev-low" },
+  open: { label: "Awaiting authorization", cls: "sev-medium" },
+  draft: { label: "Draft — pending", cls: "sev-medium" },
+  closed: { label: "Dismissed", cls: "sev-high" },
+  unknown: { label: "Disposition unverified", cls: "sev-medium" },
+};
+
 function renderMeasure(item) {
   const link = item.pr_url
     ? `<a href="${esc(item.pr_url)}" target="_blank" rel="noopener">review the proposal</a>`
     : "";
   const statusClass =
     item.status === "pr-opened" || item.status === "validated" ? "sev-low" : "sev-high";
+  const disp = PR_DISPOSITION[item.pr_state];
+  const settledAt = item.merged_at || item.closed_at;
+  const dispBadge = disp
+    ? `<span class="sev ${disp.cls}" title="${esc(item.pr_state)}">${esc(disp.label)}${
+        settledAt ? ` · ${fmtTime(settledAt)}` : ""
+      }</span>`
+    : "";
   return `
     <div class="record">
       <summary style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="sev ${statusClass}">${esc(item.status)}</span>
+        ${dispBadge}
         <span class="record-title">${esc(item.target_id)}</span>
         <span class="inc-count">${esc(item.fingerprint)}</span>
         <span class="record-meta">${fmtTime(item.created_at)} ${link}</span>

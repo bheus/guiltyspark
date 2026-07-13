@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 from guiltyspark.clustering import AnomalyGroup, cluster_incidents, propose_pattern
 from guiltyspark.config import Settings
+from guiltyspark.github_pr import PrStatusClient
 from guiltyspark.grouping import group_incidents
 from guiltyspark.loki import LokiClient
 from guiltyspark.models import Incident, LogEvent
@@ -164,6 +165,9 @@ class DashboardService:
         self._cluster_lock = threading.Lock()
         self._cluster_sig: tuple[str, ...] | None = None
         self._cluster_groups: list[AnomalyGroup] = []
+        # Resolves each opened PR's live disposition (merged/closed/open); its own
+        # TTL cache keeps the auto-refresh from hammering the GitHub API.
+        self._pr_status = PrStatusClient(settings)
         # Seed the store from any startup-provided targets, but only while it is
         # empty so live dashboard edits are never clobbered.
         if targets and self.state.count_targets() == 0:
@@ -319,9 +323,16 @@ class DashboardService:
         }
 
     def remediations(self, limit: int = 50) -> dict:
+        records = self.state.recent_remediations(limit)
+        for record in records:
+            status = self._pr_status.status(record.get("pr_url"))
+            if status is not None:
+                record["pr_state"] = status["state"]
+                record["merged_at"] = status.get("merged_at")
+                record["closed_at"] = status.get("closed_at")
         return {
             "generated_at": _now_iso(),
-            "remediations": self.state.recent_remediations(limit),
+            "remediations": records,
         }
 
     def anomalies(self, minutes: int = 60) -> dict:
