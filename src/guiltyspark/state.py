@@ -69,6 +69,85 @@ class StateStore:
             ).fetchone()
             return row is not None
 
+    # -- semantic issue registry ------------------------------------------
+
+    def issue_for_fingerprint(self, target_id: str, fingerprint: str) -> str | None:
+        with self._connect() as db:
+            row = db.execute(
+                "select issue_key from issue_members "
+                "where target_id = ? and fingerprint = ?",
+                (target_id, fingerprint),
+            ).fetchone()
+        return row[0] if row else None
+
+    def record_issue_member(
+        self, target_id: str, fingerprint: str, issue_key: str
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                "insert into issue_members(target_id, fingerprint, issue_key) "
+                "values (?, ?, ?) on conflict(target_id, fingerprint) do nothing",
+                (target_id, fingerprint, issue_key),
+            )
+
+    def create_issue(
+        self,
+        target_id: str,
+        issue_key: str,
+        title: str,
+        service: str,
+        anchor_fingerprint: str,
+        anchor_sample: str,
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                "insert into remediation_issues"
+                "(target_id, issue_key, title, service, anchor_fingerprint, anchor_sample) "
+                "values (?, ?, ?, ?, ?, ?) "
+                "on conflict(target_id, issue_key) do nothing",
+                (target_id, issue_key, title, service, anchor_fingerprint, anchor_sample),
+            )
+
+    def active_issues(
+        self, target_id: str, within_seconds: int, limit: int = 40
+    ) -> list[dict]:
+        """Issues first seen within the window, newest first, for match context."""
+        with self._connect() as db:
+            rows = db.execute(
+                "select issue_key, title, service, anchor_fingerprint, anchor_sample "
+                "from remediation_issues "
+                "where target_id = ? "
+                "and created_at >= datetime('now', ?) "
+                "order by created_at desc limit ?",
+                (target_id, f"-{int(within_seconds)} seconds", limit),
+            ).fetchall()
+        return [
+            {
+                "issue_key": row[0],
+                "title": row[1],
+                "service": row[2],
+                "anchor_fingerprint": row[3],
+                "anchor_sample": row[4],
+            }
+            for row in rows
+        ]
+
+    def issue_last_pr(self, target_id: str, issue_key: str) -> dict | None:
+        """Most recent PR-bearing remediation among the issue's member fingerprints."""
+        with self._connect() as db:
+            row = db.execute(
+                "select r.pr_url, r.status, r.created_at from remediations r "
+                "join issue_members m "
+                "  on m.target_id = r.target_id and m.fingerprint = r.fingerprint "
+                "where r.target_id = ? and m.issue_key = ? "
+                "and r.pr_url is not null and r.pr_url != '' "
+                "order by r.id desc limit 1",
+                (target_id, issue_key),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"pr_url": row[0], "status": row[1], "created_at": row[2]}
+
     def enqueue_remediation_job(
         self, target_id: str, fingerprint: str, payload: str
     ) -> None:
@@ -407,6 +486,28 @@ class StateStore:
                 "pattern text not null, "
                 "note text not null default '', "
                 "created_at text not null default current_timestamp)"
+            )
+            # A logical "issue" is a Codex-assigned semantic cluster that many
+            # distinct fingerprints can map to, so remediation dedups on the
+            # underlying malfunction rather than on exact log wording.
+            db.execute(
+                "create table if not exists remediation_issues("
+                "target_id text not null, "
+                "issue_key text not null, "
+                "title text not null default '', "
+                "service text not null default '', "
+                "anchor_fingerprint text not null default '', "
+                "anchor_sample text not null default '', "
+                "created_at text not null default current_timestamp, "
+                "primary key(target_id, issue_key))"
+            )
+            db.execute(
+                "create table if not exists issue_members("
+                "target_id text not null, "
+                "fingerprint text not null, "
+                "issue_key text not null, "
+                "created_at text not null default current_timestamp, "
+                "primary key(target_id, fingerprint))"
             )
 
     def _connect(self) -> sqlite3.Connection:

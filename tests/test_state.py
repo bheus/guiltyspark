@@ -143,6 +143,38 @@ class StateStoreTests(unittest.TestCase):
             self.assertFalse(store.delete_ignore_rule(rid))
             self.assertEqual(len(store.list_ignore_rules()), 1)
 
+    def test_issue_registry_and_last_pr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            from pathlib import Path
+
+            store = StateStore(Path(tmp) / "state.sqlite3")
+            self.assertIsNone(store.issue_for_fingerprint("abraham", "fp1"))
+
+            store.create_issue(
+                "abraham", "iss1", "cash overspend", "abraham", "fp1", "boom"
+            )
+            store.record_issue_member("abraham", "fp1", "iss1")
+            store.record_issue_member("abraham", "fp2", "iss1")
+            self.assertEqual(store.issue_for_fingerprint("abraham", "fp2"), "iss1")
+
+            active = store.active_issues("abraham", within_seconds=3600)
+            self.assertEqual([i["issue_key"] for i in active], ["iss1"])
+
+            # No PR yet for the issue.
+            self.assertIsNone(store.issue_last_pr("abraham", "iss1"))
+
+            # A PR recorded against a *member* fingerprint surfaces for the issue.
+            store.record_remediation(
+                "abraham", "fp2", "pr-opened", "ok",
+                branch="b", pr_url="https://github.com/o/r/pull/9",
+            )
+            last = store.issue_last_pr("abraham", "iss1")
+            self.assertEqual(last["pr_url"], "https://github.com/o/r/pull/9")
+
+            # Idempotent membership: re-recording fp1 keeps its original issue.
+            store.record_issue_member("abraham", "fp1", "other")
+            self.assertEqual(store.issue_for_fingerprint("abraham", "fp1"), "iss1")
+
     def test_ignore_anomalies_batch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             from pathlib import Path

@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 
 from guiltyspark.agent import Analyzer
 from guiltyspark.config import Settings
+from guiltyspark.github_pr import PrStatusClient
 from guiltyspark.grouping import group_incidents
+from guiltyspark.issues import plan_remediations
 from guiltyspark.loki import LokiClient
 from guiltyspark.models import Finding, Incident
 from guiltyspark.notifications import EmailNotifier, Notifier
@@ -48,6 +50,7 @@ class Monitor:
             recipient=settings.notify_email_to,
         )
         self.remediator = Remediator(settings)
+        self.pr_status = PrStatusClient(settings)
 
     async def run_once(self) -> RunSummary:
         end_ns = time.time_ns()
@@ -122,12 +125,31 @@ class Monitor:
         if self.target is None or self.target.mode == "observe":
             return 0
         incidents_by_fingerprint = {incident.fingerprint: incident for incident in incidents}
-        for finding in findings:
-            if not finding.pr_recommended:
-                continue
-            incident = incidents_by_fingerprint.get(finding.fingerprint)
-            if incident is None:
-                continue
+        candidates = [
+            (finding, incidents_by_fingerprint[finding.fingerprint])
+            for finding in findings
+            if finding.pr_recommended
+            and finding.fingerprint in incidents_by_fingerprint
+        ]
+        # Collapse near-duplicate fingerprints to one logical issue and drop any
+        # whose issue already has a live/recent PR, so we do not re-file the same
+        # malfunction under slightly different wording.
+        plan = plan_remediations(
+            self.settings,
+            self.state,
+            self.target_id,
+            candidates,
+            pr_status=self.pr_status,
+        )
+        for suppressed in plan.suppressed:
+            print(
+                f"remediation_suppressed target={self.target_id} "
+                f"issue={suppressed.issue_key} reason={suppressed.reason} "
+                f"fingerprints={','.join(suppressed.fingerprints)} "
+                f"pr_url={suppressed.pr_url or ''}",
+                flush=True,
+            )
+        for finding, incident in plan.to_remediate:
             payload = json.dumps(
                 {"incident": asdict(incident), "finding": asdict(finding)}, sort_keys=True
             )

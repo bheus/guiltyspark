@@ -63,6 +63,9 @@ class Settings:
     dashboard_host: str = "0.0.0.0"
     dashboard_port: int = 8343
     dashboard_grouping: bool = False
+    dedup_issues: bool = True
+    issue_cooldown_seconds: int = 604800
+    issue_active_window_seconds: int = 1209600
     targets_path: Path | None = None
     targets_json: str | None = None
     remediation_root: Path = Path("data/remediation")
@@ -106,6 +109,11 @@ class Settings:
             dashboard_host=os.getenv("GUILTYSPARK_DASHBOARD_HOST", "0.0.0.0"),
             dashboard_port=_int("GUILTYSPARK_DASHBOARD_PORT", 8343),
             dashboard_grouping=_bool("GUILTYSPARK_DASHBOARD_GROUPING", False),
+            dedup_issues=_bool("GUILTYSPARK_DEDUP_ISSUES", True),
+            issue_cooldown_seconds=_int("GUILTYSPARK_ISSUE_COOLDOWN_SECONDS", 604800),
+            issue_active_window_seconds=_int(
+                "GUILTYSPARK_ISSUE_ACTIVE_WINDOW_SECONDS", 1209600
+            ),
             targets_path=(
                 Path(value)
                 if (value := os.getenv("GUILTYSPARK_TARGETS_PATH", "").strip())
