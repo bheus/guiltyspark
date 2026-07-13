@@ -180,11 +180,34 @@ class DashboardService:
             "ignored": self.state.list_ignored_anomalies(),
         }
 
-    def ignore_anomaly(self, fingerprint: str, note: str = "") -> dict:
+    def ignore_anomaly(
+        self,
+        fingerprint: str,
+        note: str = "",
+        service: str = "",
+        level: str = "",
+        sample: str = "",
+        count: int = 0,
+    ) -> dict:
         if not fingerprint:
             raise ValueError("fingerprint is required")
-        self.state.ignore_anomaly(fingerprint, note)
+        self.state.ignore_anomaly(
+            fingerprint,
+            note=note,
+            service=service,
+            level=level,
+            sample=sample,
+            count=count,
+        )
         return {"ignored": True, "fingerprint": fingerprint}
+
+    def update_ignored_note(self, fingerprint: str, note: str) -> dict:
+        if not fingerprint:
+            raise ValueError("fingerprint is required")
+        updated = self.state.set_ignored_note(fingerprint, note)
+        if not updated:
+            raise ValueError(f"no silenced anomaly with fingerprint {fingerprint!r}")
+        return {"updated": True, "fingerprint": fingerprint}
 
     def unignore_anomaly(self, fingerprint: str) -> dict:
         if not fingerprint:
@@ -330,6 +353,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.service.ignore_anomaly(
                         str(body.get("fingerprint", "")).strip(),
+                        note=str(body.get("note", "")).strip(),
+                        service=str(body.get("service", "")).strip(),
+                        level=str(body.get("level", "")).strip(),
+                        sample=str(body.get("sample", "")).strip(),
+                        count=_as_int(body.get("count")),
+                    )
+                )
+            elif parsed.path == "/api/anomalies/note":
+                self._send_json(
+                    self.service.update_ignored_note(
+                        str(body.get("fingerprint", "")).strip(),
                         str(body.get("note", "")).strip(),
                     )
                 )
@@ -404,6 +438,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+def _as_int(value: object) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
 
 
 def _bounded(query: dict[str, list[str]], key: str, default: int, maximum: int) -> int:

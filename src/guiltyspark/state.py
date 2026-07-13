@@ -193,13 +193,35 @@ class StateStore:
 
     # --- ignored anomalies (noise the operator has silenced) ------------
 
-    def ignore_anomaly(self, fingerprint: str, note: str = "") -> None:
+    def ignore_anomaly(
+        self,
+        fingerprint: str,
+        note: str = "",
+        service: str = "",
+        level: str = "",
+        sample: str = "",
+        count: int = 0,
+    ) -> None:
         with self._connect() as db:
             db.execute(
-                "insert into ignored_anomalies(fingerprint, note) values (?, ?) "
-                "on conflict(fingerprint) do update set note = excluded.note",
-                (fingerprint, note),
+                "insert into ignored_anomalies"
+                "(fingerprint, note, service, level, sample, count) "
+                "values (?, ?, ?, ?, ?, ?) "
+                "on conflict(fingerprint) do update set "
+                "note = excluded.note, service = excluded.service, "
+                "level = excluded.level, sample = excluded.sample, "
+                "count = excluded.count",
+                (fingerprint, note, service, level, sample, int(count or 0)),
             )
+
+    def set_ignored_note(self, fingerprint: str, note: str) -> bool:
+        """Update only the triage note of an already-silenced anomaly."""
+        with self._connect() as db:
+            cursor = db.execute(
+                "update ignored_anomalies set note = ? where fingerprint = ?",
+                (note, fingerprint),
+            )
+            return cursor.rowcount > 0
 
     def unignore_anomaly(self, fingerprint: str) -> bool:
         with self._connect() as db:
@@ -216,11 +238,19 @@ class StateStore:
     def list_ignored_anomalies(self) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
-                "select fingerprint, note, created_at from ignored_anomalies "
-                "order by created_at desc"
+                "select fingerprint, note, service, level, sample, count, created_at "
+                "from ignored_anomalies order by created_at desc"
             ).fetchall()
         return [
-            {"fingerprint": row[0], "note": row[1], "created_at": row[2]}
+            {
+                "fingerprint": row[0],
+                "note": row[1],
+                "service": row[2],
+                "level": row[3],
+                "sample": row[4],
+                "count": row[5],
+                "created_at": row[6],
+            }
             for row in rows
         ]
 
@@ -287,8 +317,26 @@ class StateStore:
                 "create table if not exists ignored_anomalies("
                 "fingerprint text primary key, "
                 "note text not null default '', "
+                "service text not null default '', "
+                "level text not null default '', "
+                "sample text not null default '', "
+                "count integer not null default 0, "
                 "created_at text not null default current_timestamp)"
             )
+            # Migrate DBs created before triage context was captured.
+            existing = {
+                row[1] for row in db.execute("pragma table_info(ignored_anomalies)")
+            }
+            for column, ddl in (
+                ("service", "text not null default ''"),
+                ("level", "text not null default ''"),
+                ("sample", "text not null default ''"),
+                ("count", "integer not null default 0"),
+            ):
+                if column not in existing:
+                    db.execute(
+                        f"alter table ignored_anomalies add column {column} {ddl}"
+                    )
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)

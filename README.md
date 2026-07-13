@@ -199,13 +199,16 @@ The dashboard is also the control surface for configuration:
   the daemon on its next cycle.
 - **Silence noise** — an unassigned anomaly you judge to be noise can be silenced; it is
   suppressed from the stream (keyed by its incident fingerprint) and listed under
-  **Silenced anomalies**, where it can be restored.
+  **Silenced anomalies**. Silencing captures the anomaly's service, level, a sample line,
+  and event count so the entry stays legible after it leaves the stream, and each entry
+  carries an editable triage note for your own reference. Any entry can be restored.
 
 The page is static HTML/JS that talks only to the JSON API. Read endpoints:
 `/api/overview`, `/api/findings`, `/api/remediations`, `/api/anomalies?minutes=N`,
 `/api/targets`, `/api/anomalies/ignored`. Write endpoints: `POST`/`DELETE
-/api/targets`, `POST`/`DELETE /api/anomalies/ignore`. A richer frontend (e.g. Vue) can
-replace the client later without backend changes.
+/api/targets`, `POST`/`DELETE /api/anomalies/ignore`, and `POST /api/anomalies/note`
+(edit a silenced anomaly's triage note). A richer frontend (e.g. Vue) can replace the
+client later without backend changes.
 
 The dashboard is **unauthenticated**, and it can now modify configuration and trigger
 target changes. Keep it on a trusted LAN and do not expose it to the public internet.
