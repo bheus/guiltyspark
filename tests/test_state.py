@@ -122,3 +122,47 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue(store.unignore_anomaly("fp1"))
             self.assertFalse(store.unignore_anomaly("fp1"))
             self.assertEqual(store.ignored_fingerprints(), {"fp2"})
+
+    def test_ignore_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            from pathlib import Path
+
+            store = StateStore(Path(tmp) / "state.sqlite3")
+            self.assertEqual(store.list_ignore_rules(), [])
+
+            rid = store.add_ignore_rule("loki", r"error .*scheduler", "known flap")
+            store.add_ignore_rule("", r"connection reset")
+            rules = store.list_ignore_rules()
+            self.assertEqual(len(rules), 2)
+            first = next(r for r in rules if r["id"] == rid)
+            self.assertEqual(first["service"], "loki")
+            self.assertEqual(first["pattern"], r"error .*scheduler")
+            self.assertEqual(first["note"], "known flap")
+
+            self.assertTrue(store.delete_ignore_rule(rid))
+            self.assertFalse(store.delete_ignore_rule(rid))
+            self.assertEqual(len(store.list_ignore_rules()), 1)
+
+    def test_ignore_anomalies_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            from pathlib import Path
+
+            store = StateStore(Path(tmp) / "state.sqlite3")
+            applied = store.ignore_anomalies(
+                [
+                    {"fingerprint": "a", "service": "loki", "level": "error", "count": 10},
+                    {"fingerprint": "b", "service": "loki", "count": 9},
+                    {"fingerprint": "", "service": "skip"},  # dropped: no fingerprint
+                    {"not_a": "dict"},  # dropped: no fingerprint
+                ]
+            )
+            self.assertEqual(applied, 2)
+            self.assertEqual(store.ignored_fingerprints(), {"a", "b"})
+
+            # Empty input is a no-op, and re-silencing upserts rather than erroring.
+            self.assertEqual(store.ignore_anomalies([]), 0)
+            store.set_ignored_note("a", "keep me")
+            self.assertEqual(
+                store.ignore_anomalies([{"fingerprint": "a", "service": "loki"}]), 1
+            )
+            self.assertEqual(store.ignored_fingerprints(), {"a", "b"})

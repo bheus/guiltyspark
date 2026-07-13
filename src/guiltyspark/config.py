@@ -62,6 +62,7 @@ class Settings:
     pr_mode: str
     dashboard_host: str = "0.0.0.0"
     dashboard_port: int = 8343
+    dashboard_grouping: bool = False
     targets_path: Path | None = None
     targets_json: str | None = None
     remediation_root: Path = Path("data/remediation")
@@ -104,6 +105,7 @@ class Settings:
             pr_mode=pr_mode,
             dashboard_host=os.getenv("GUILTYSPARK_DASHBOARD_HOST", "0.0.0.0"),
             dashboard_port=_int("GUILTYSPARK_DASHBOARD_PORT", 8343),
+            dashboard_grouping=_bool("GUILTYSPARK_DASHBOARD_GROUPING", False),
             targets_path=(
                 Path(value)
                 if (value := os.getenv("GUILTYSPARK_TARGETS_PATH", "").strip())
