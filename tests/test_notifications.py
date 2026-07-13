@@ -46,6 +46,8 @@ class EmailNotifierTests(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, RESEND_ENDPOINT)
         self.assertEqual(request.get_header("Authorization"), "Bearer re_key")
+        # Cloudflare (in front of Resend) 403s the default urllib UA — must be named.
+        self.assertEqual(request.get_header("User-agent"), "guiltyspark/1.0")
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(payload["from"], "monitor@fleet.example")
         self.assertEqual(payload["to"], ["reclaimer@example.com"])

@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from guiltyspark.models import Finding
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
+# Resend sits behind Cloudflare, which returns a 403 "error code: 1010" to the
+# default Python-urllib signature. A named User-Agent clears that block; send it
+# on every outbound request so notifications are not silently rejected.
+USER_AGENT = "guiltyspark/1.0"
 
 
 @dataclass(frozen=True)
@@ -31,7 +35,7 @@ class Notifier:
         request = urllib.request.Request(
             self.webhook_url,
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=10):
@@ -89,6 +93,7 @@ class EmailNotifier:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": USER_AGENT,
             },
             method="POST",
         )
