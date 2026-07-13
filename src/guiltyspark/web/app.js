@@ -16,10 +16,18 @@ function esc(text) {
   return div.innerHTML;
 }
 
+// SQLite's `current_timestamp` yields a naive UTC string ("2026-07-13 16:09:21")
+// with no zone marker; `new Date()` would read that as local time and shift it by
+// the viewer's offset. Stamp such values as UTC so every timestamp resolves to the
+// same instant, then let toLocaleString render it in the browser's own timezone.
+function toUtcDate(iso) {
+  const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(iso);
+  return new Date(hasZone ? iso : iso.replace(" ", "T") + "Z");
+}
+
 function fmtTime(iso) {
   if (!iso) return "—";
-  const date = new Date(iso);
-  return date.toLocaleString(undefined, {
+  return toUtcDate(iso).toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
