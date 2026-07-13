@@ -91,11 +91,33 @@ class StateStoreTests(unittest.TestCase):
             store = StateStore(Path(tmp) / "state.sqlite3")
             self.assertEqual(store.ignored_fingerprints(), set())
 
-            store.ignore_anomaly("fp1", "just noise")
+            store.ignore_anomaly(
+                "fp1",
+                note="just noise",
+                service="store-crawler",
+                level="error",
+                sample="connection reset by peer",
+                count=42,
+            )
             store.ignore_anomaly("fp2")
             self.assertEqual(store.ignored_fingerprints(), {"fp1", "fp2"})
-            listed = store.list_ignored_anomalies()
-            self.assertEqual({item["fingerprint"] for item in listed}, {"fp1", "fp2"})
+
+            listed = {item["fingerprint"]: item for item in store.list_ignored_anomalies()}
+            self.assertEqual(set(listed), {"fp1", "fp2"})
+            self.assertEqual(listed["fp1"]["service"], "store-crawler")
+            self.assertEqual(listed["fp1"]["level"], "error")
+            self.assertEqual(listed["fp1"]["sample"], "connection reset by peer")
+            self.assertEqual(listed["fp1"]["count"], 42)
+            self.assertEqual(listed["fp1"]["note"], "just noise")
+
+            # Note-only update must not disturb captured context.
+            self.assertTrue(store.set_ignored_note("fp1", "triaged: upstream flaps"))
+            self.assertFalse(store.set_ignored_note("absent", "nope"))
+            refreshed = next(
+                i for i in store.list_ignored_anomalies() if i["fingerprint"] == "fp1"
+            )
+            self.assertEqual(refreshed["note"], "triaged: upstream flaps")
+            self.assertEqual(refreshed["service"], "store-crawler")
 
             self.assertTrue(store.unignore_anomaly("fp1"))
             self.assertFalse(store.unignore_anomaly("fp1"))

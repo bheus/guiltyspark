@@ -5,6 +5,7 @@
 
 const REFRESH_MS = 60_000;
 let windowMinutes = 60;
+let unassignedByFp = {};
 
 const $ = (id) => document.getElementById(id);
 
@@ -127,6 +128,8 @@ async function loadAnomalies() {
   $("tile-anomalies").textContent = data.error_events;
   const unassigned = data.incidents.filter((it) => it.bucket === "unassigned");
   const contained = data.incidents.filter((it) => it.bucket !== "unassigned");
+  unassignedByFp = {};
+  unassigned.forEach((it) => { unassignedByFp[it.fingerprint] = it; });
   const unassignedTile = $("tile-unassigned");
   unassignedTile.textContent = unassigned.length;
   unassignedTile.dataset.zero = String(unassigned.length === 0);
@@ -210,6 +213,9 @@ async function loadMeasures() {
 /* ---- silenced anomalies ---- */
 
 async function loadSilenced() {
+  // Do not clobber a note the operator is actively typing on refresh.
+  const active = document.activeElement;
+  if (active && active.matches && active.matches("[data-note-input]")) return;
   const data = await getJSON("/api/anomalies/ignored");
   const list = data.ignored || [];
   $("silenced-count").textContent =
@@ -220,18 +226,37 @@ async function loadSilenced() {
 }
 
 function renderSilenced(item) {
-  const note = item.note
-    ? `<span class="inc-count">${esc(item.note)}</span>`
+  const fp = esc(item.fingerprint);
+  const level = item.level ? severityChip(item.level) : "";
+  const service = item.service || item.fingerprint;
+  const count = item.count
+    ? `<span class="inc-count">×${item.count}</span>`
+    : "";
+  const sample = item.sample
+    ? `<div class="inc-samples"><div>${esc(item.sample)}</div></div>`
     : "";
   return `
-    <div class="protocol-row">
-      <span class="inc-service">${esc(item.fingerprint)}</span>
-      ${note}
-      <span class="inc-when">silenced ${fmtTime(item.created_at)}</span>
-      <span class="protocol-actions">
-        <button type="button" class="btn" data-restore="${esc(item.fingerprint)}">Restore</button>
-      </span>
-    </div>`;
+    <details class="incident">
+      <summary>
+        ${level}
+        <span class="inc-service">${esc(service)}</span>
+        ${count}
+        <span class="inc-when">silenced ${fmtTime(item.created_at)}</span>
+        <span class="inc-actions">
+          <button type="button" class="btn" data-restore="${fp}">Restore</button>
+        </span>
+      </summary>
+      <div class="silenced-body">
+        <div class="silenced-fp">fingerprint ${fp}</div>
+        ${sample}
+        <div class="note-editor">
+          <label for="note-${fp}">Triage note</label>
+          <textarea id="note-${fp}" data-note-input="${fp}" rows="2"
+            placeholder="Record why this anomaly is noise, for future reference.">${esc(item.note)}</textarea>
+          <button type="button" class="btn btn-primary" data-note-save="${fp}">Save note</button>
+        </div>
+      </div>
+    </details>`;
 }
 
 /* ---- containment protocols (target editor) ---- */
@@ -354,23 +379,44 @@ $("unassigned-list").addEventListener("click", (event) => {
   if (!button) return;
   event.preventDefault();
   const fingerprint = button.dataset.ignore;
+  const incident = unassignedByFp[fingerprint] || {};
   guard(async () => {
-    await sendJSON("POST", "/api/anomalies/ignore", { fingerprint });
+    await sendJSON("POST", "/api/anomalies/ignore", {
+      fingerprint,
+      service: incident.service || "",
+      level: incident.level || "",
+      count: incident.count || 0,
+      sample: (incident.samples && incident.samples[0]) || "",
+    });
     await Promise.all([loadAnomalies(), loadSilenced()]);
   });
 });
 
 $("silenced-list").addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-restore]");
-  if (!button) return;
+  const restoreBtn = event.target.closest("button[data-restore]");
+  if (restoreBtn) {
+    event.preventDefault();
+    const fingerprint = restoreBtn.dataset.restore;
+    guard(async () => {
+      await sendJSON(
+        "DELETE",
+        `/api/anomalies/ignore?fingerprint=${encodeURIComponent(fingerprint)}`
+      );
+      await Promise.all([loadAnomalies(), loadSilenced()]);
+    });
+    return;
+  }
+  const saveBtn = event.target.closest("button[data-note-save]");
+  if (!saveBtn) return;
   event.preventDefault();
-  const fingerprint = button.dataset.restore;
+  const fingerprint = saveBtn.dataset.noteSave;
+  const input = document.getElementById(`note-${fingerprint}`);
+  const note = input ? input.value : "";
+  const original = saveBtn.textContent;
   guard(async () => {
-    await sendJSON(
-      "DELETE",
-      `/api/anomalies/ignore?fingerprint=${encodeURIComponent(fingerprint)}`
-    );
-    await Promise.all([loadAnomalies(), loadSilenced()]);
+    await sendJSON("POST", "/api/anomalies/note", { fingerprint, note });
+    saveBtn.textContent = "Recorded";
+    setTimeout(() => { saveBtn.textContent = original; }, 1500);
   });
 });
 

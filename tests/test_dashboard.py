@@ -264,21 +264,63 @@ class TestHTTPServer:
         assert status == 400
         assert "error" in body
 
-    def test_ignore_and_restore_anomaly(self, dashboard_server):
+    def test_ignore_captures_context_and_restore(self, dashboard_server):
         status, body = _request(
             "POST",
             dashboard_server + "/api/anomalies/ignore",
-            {"fingerprint": "deadbeef", "note": "noise"},
+            {
+                "fingerprint": "deadbeef",
+                "note": "noise",
+                "service": "store-crawler",
+                "level": "error",
+                "sample": "connection reset",
+                "count": 17,
+            },
         )
         assert status == 200 and body["ignored"] is True
 
         status, body = _get(dashboard_server + "/api/anomalies/ignored")
-        assert "deadbeef" in {i["fingerprint"] for i in json.loads(body)["ignored"]}
+        entry = next(
+            i for i in json.loads(body)["ignored"] if i["fingerprint"] == "deadbeef"
+        )
+        assert entry["service"] == "store-crawler"
+        assert entry["level"] == "error"
+        assert entry["sample"] == "connection reset"
+        assert entry["count"] == 17
 
         status, body = _request(
             "DELETE", dashboard_server + "/api/anomalies/ignore?fingerprint=deadbeef"
         )
         assert status == 200 and body["restored"] is True
+
+    def test_update_note(self, dashboard_server):
+        _request(
+            "POST",
+            dashboard_server + "/api/anomalies/ignore",
+            {"fingerprint": "cafe", "service": "abraham"},
+        )
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/note",
+            {"fingerprint": "cafe", "note": "triaged: known flake"},
+        )
+        assert status == 200 and body["updated"] is True
+
+        status, body = _get(dashboard_server + "/api/anomalies/ignored")
+        entry = next(
+            i for i in json.loads(body)["ignored"] if i["fingerprint"] == "cafe"
+        )
+        assert entry["note"] == "triaged: known flake"
+        # Context must survive a note-only update.
+        assert entry["service"] == "abraham"
+
+    def test_note_on_unknown_fingerprint_is_rejected(self, dashboard_server):
+        status, _ = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/note",
+            {"fingerprint": "missing", "note": "x"},
+        )
+        assert status == 400
 
     def test_ignore_requires_fingerprint(self, dashboard_server):
         status, body = _request(
