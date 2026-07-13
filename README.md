@@ -148,7 +148,13 @@ draft-PR exercise.
 
 Push conventional commits to `main`. GitHub Actions tests the project, creates a semantic
 release, builds a native `linux/arm64` image, publishes versioned and `latest` tags to GHCR,
-then pins the released image on `main` for a Git-based container orchestrator to poll.
+then triggers the GuiltySpark Portainer stack webhook so the stack re-pulls `latest`.
+
+For the one-time Portainer setup, create the stack from this repository's `main` branch,
+enable the stack webhook in Portainer, and save its generated URL as the GitHub repository
+secret `PORTAINER_GUILTYSPARK_WEBHOOK`. The release workflow calls that webhook only after
+the new image has been pushed. If the secret is absent, the webhook step is skipped and
+Portainer's normal Git polling remains the fallback.
 
 Supply target mappings and credentials through environment variables at deployment time.
 The repository intentionally contains no application-specific target profiles. Start each
