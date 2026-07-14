@@ -345,7 +345,9 @@ async function loadMeasures() {
 async function loadSilenced() {
   // Do not clobber a note the operator is actively typing on refresh.
   const active = document.activeElement;
-  if (active && active.matches && active.matches("[data-note-input]")) return;
+  if (active && active.matches && active.matches(
+    "[data-note-input], [data-rule-title], [data-rule-note]"
+  )) return;
   const data = await getJSON("/api/anomalies/ignored");
   const list = data.ignored || [];
   const rules = data.rules || [];
@@ -362,20 +364,37 @@ async function loadSilenced() {
 
 function renderRule(rule) {
   const scope = rule.service
-    ? `<span class="inc-service">${esc(rule.service)}</span>`
-    : `<span class="inc-service">any service</span>`;
+    ? `service: ${esc(rule.service)}`
+    : "any service";
+  const title = rule.title || (rule.service
+    ? `${rule.service} pattern containment`
+    : "Pattern containment");
+  const id = esc(rule.id);
   return `
     <div class="incident rule-row">
       <div class="rule-head">
         <span class="rule-tag">PATTERN</span>
-        ${scope}
+        <span class="inc-service">${esc(title)}</span>
+        <span class="rule-scope">${scope}</span>
         <span class="inc-when">since ${fmtTime(rule.created_at)}</span>
         <span class="inc-actions">
-          <button type="button" class="btn" data-rule-remove="${esc(rule.id)}">Lift</button>
+          <button type="button" class="btn" data-rule-remove="${id}">Lift</button>
         </span>
       </div>
       <code class="rule-pattern">${esc(rule.pattern)}</code>
       ${rule.note ? `<div class="rule-note">${esc(rule.note)}</div>` : ""}
+      <details class="rule-editor">
+        <summary>Amend record</summary>
+        <label>Containment label
+          <input type="text" data-rule-title value="${esc(title)}"
+            placeholder="Describe this silenced anomaly" maxlength="200" />
+        </label>
+        <label>Triage note
+          <textarea data-rule-note rows="2"
+            placeholder="Record why this pattern is noise, for future reference.">${esc(rule.note)}</textarea>
+        </label>
+        <button type="button" class="btn btn-primary" data-rule-save="${id}">Save record</button>
+      </details>
     </div>`;
 }
 
@@ -630,12 +649,14 @@ async function openPatternBox(id) {
 
 async function createRule(id) {
   const box = patternBox(id);
-  if (!box) return;
+  const group = groupsById[id];
+  if (!box || !group) return;
   const pattern = box.querySelector("[data-pattern-input]").value.trim();
   if (!pattern) return;
   await sendJSON("POST", "/api/anomalies/rules", {
     service: box.querySelector("[data-pattern-service]").value.trim(),
     pattern,
+    title: group.title || "",
     note: box.querySelector("[data-pattern-note]").value.trim(),
   });
   await Promise.all([loadAnomalies(), loadSilenced()]);
@@ -719,6 +740,24 @@ $("silence-all").addEventListener("click", (event) => {
 });
 
 $("silenced-list").addEventListener("click", (event) => {
+  const saveRuleBtn = event.target.closest("button[data-rule-save]");
+  if (saveRuleBtn) {
+    event.preventDefault();
+    const row = saveRuleBtn.closest(".rule-row");
+    if (!row) return;
+    const title = row.querySelector("[data-rule-title]").value;
+    const note = row.querySelector("[data-rule-note]").value;
+    const original = saveRuleBtn.textContent;
+    guard(async () => {
+      await sendJSON("POST", "/api/anomalies/rules/metadata", {
+        id: Number(saveRuleBtn.dataset.ruleSave), title, note,
+      });
+      saveRuleBtn.textContent = "Recorded";
+      setTimeout(() => { saveRuleBtn.textContent = original; }, 1500);
+      await loadSilenced();
+    });
+    return;
+  }
   const ruleBtn = event.target.closest("button[data-rule-remove]");
   if (ruleBtn) {
     event.preventDefault();

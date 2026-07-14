@@ -539,7 +539,12 @@ class TestHTTPServer:
         status, body = _request(
             "POST",
             dashboard_server + "/api/anomalies/rules",
-            {"service": "loki", "pattern": r"error .*scheduler", "note": "flap"},
+            {
+                "service": "loki",
+                "pattern": r"error .*scheduler",
+                "title": "Loki scheduler interruption",
+                "note": "flap",
+            },
         )
         assert status == 200 and body["created"] is True
         rule_id = body["id"]
@@ -548,6 +553,19 @@ class TestHTTPServer:
         rule = next(r for r in json.loads(body)["rules"] if r["id"] == rule_id)
         assert rule["service"] == "loki"
         assert rule["pattern"] == r"error .*scheduler"
+        assert rule["title"] == "Loki scheduler interruption"
+
+        status, body = _request(
+            "POST",
+            dashboard_server + "/api/anomalies/rules/metadata",
+            {"id": rule_id, "title": "Known Loki scheduler flap", "note": "expected"},
+        )
+        assert status == 200 and body["updated"] is True
+
+        status, body = _get(dashboard_server + "/api/anomalies/ignored")
+        rule = next(r for r in json.loads(body)["rules"] if r["id"] == rule_id)
+        assert rule["title"] == "Known Loki scheduler flap"
+        assert rule["note"] == "expected"
 
         status, body = _request(
             "DELETE", dashboard_server + f"/api/anomalies/rules?id={rule_id}"

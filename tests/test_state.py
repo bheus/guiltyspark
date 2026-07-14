@@ -130,7 +130,9 @@ class StateStoreTests(unittest.TestCase):
             store = StateStore(Path(tmp) / "state.sqlite3")
             self.assertEqual(store.list_ignore_rules(), [])
 
-            rid = store.add_ignore_rule("loki", r"error .*scheduler", "known flap")
+            rid = store.add_ignore_rule(
+                "loki", r"error .*scheduler", "known flap", "Scheduler flap"
+            )
             store.add_ignore_rule("", r"connection reset")
             rules = store.list_ignore_rules()
             self.assertEqual(len(rules), 2)
@@ -138,6 +140,14 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(first["service"], "loki")
             self.assertEqual(first["pattern"], r"error .*scheduler")
             self.assertEqual(first["note"], "known flap")
+            self.assertEqual(first["title"], "Scheduler flap")
+
+            self.assertTrue(
+                store.set_ignore_rule_metadata(rid, "Known scheduler flap", "expected")
+            )
+            updated = next(r for r in store.list_ignore_rules() if r["id"] == rid)
+            self.assertEqual(updated["title"], "Known scheduler flap")
+            self.assertEqual(updated["note"], "expected")
 
             self.assertTrue(store.delete_ignore_rule(rid))
             self.assertFalse(store.delete_ignore_rule(rid))

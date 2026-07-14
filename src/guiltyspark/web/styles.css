@@ -451,6 +451,49 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   white-space: pre;
 }
 .rule-note { margin-top: 6px; font-size: 12px; color: var(--ink-dim); }
+.rule-scope {
+  font-family: var(--data);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.rule-editor { margin-top: 10px; }
+.rule-editor summary {
+  cursor: pointer;
+  font-family: var(--data);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eye);
+}
+.rule-editor[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rule-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--data);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.rule-editor input,
+.rule-editor textarea {
+  font-family: var(--data);
+  font-size: 12.5px;
+  background: var(--hull-2);
+  color: var(--ink);
+  border: 1px solid var(--seam);
+  padding: 6px 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.rule-editor .btn { align-self: flex-start; }
 
 /* ---- records (findings / remediations) ---- */
 

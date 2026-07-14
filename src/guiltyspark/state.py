@@ -368,18 +368,20 @@ class StateStore:
 
     # --- pattern silence rules ------------------------------------------
 
-    def add_ignore_rule(self, service: str, pattern: str, note: str = "") -> int:
+    def add_ignore_rule(
+        self, service: str, pattern: str, note: str = "", title: str = ""
+    ) -> int:
         with self._connect() as db:
             cursor = db.execute(
-                "insert into ignore_rules(service, pattern, note) values (?, ?, ?)",
-                (service, pattern, note),
+                "insert into ignore_rules(service, pattern, note, title) values (?, ?, ?, ?)",
+                (service, pattern, note, title),
             )
             return int(cursor.lastrowid)
 
     def list_ignore_rules(self) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
-                "select id, service, pattern, note, created_at "
+                "select id, service, pattern, note, title, created_at "
                 "from ignore_rules order by created_at desc"
             ).fetchall()
         return [
@@ -388,7 +390,8 @@ class StateStore:
                 "service": row[1],
                 "pattern": row[2],
                 "note": row[3],
-                "created_at": row[4],
+                "title": row[4],
+                "created_at": row[5],
             }
             for row in rows
         ]
@@ -397,6 +400,14 @@ class StateStore:
         with self._connect() as db:
             cursor = db.execute(
                 "delete from ignore_rules where id = ?", (rule_id,)
+            )
+            return cursor.rowcount > 0
+
+    def set_ignore_rule_metadata(self, rule_id: int, title: str, note: str) -> bool:
+        with self._connect() as db:
+            cursor = db.execute(
+                "update ignore_rules set title = ?, note = ? where id = ?",
+                (title, note, rule_id),
             )
             return cursor.rowcount > 0
 
@@ -489,8 +500,16 @@ class StateStore:
                 "service text not null default '', "
                 "pattern text not null, "
                 "note text not null default '', "
+                "title text not null default '', "
                 "created_at text not null default current_timestamp)"
             )
+            rule_columns = {
+                row[1] for row in db.execute("pragma table_info(ignore_rules)")
+            }
+            if "title" not in rule_columns:
+                db.execute(
+                    "alter table ignore_rules add column title text not null default ''"
+                )
             # A logical "issue" is a Codex-assigned semantic cluster that many
             # distinct fingerprints can map to, so remediation dedups on the
             # underlying malfunction rather than on exact log wording.

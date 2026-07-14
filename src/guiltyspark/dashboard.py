@@ -274,10 +274,35 @@ class DashboardService:
             "warning": warning,
         }
 
-    def add_ignore_rule(self, service: str, pattern: str, note: str = "") -> dict:
+    def add_ignore_rule(
+        self, service: str, pattern: str, note: str = "", title: str = ""
+    ) -> dict:
         cleaned = validate_pattern(pattern)
-        rule_id = self.state.add_ignore_rule(service.strip(), cleaned, note.strip())
-        return {"created": True, "id": rule_id, "pattern": cleaned}
+        cleaned_title = title.strip()
+        if len(cleaned_title) > 200:
+            raise ValueError("title exceeds 200 characters")
+        rule_id = self.state.add_ignore_rule(
+            service.strip(), cleaned, note.strip(), cleaned_title
+        )
+        return {
+            "created": True,
+            "id": rule_id,
+            "pattern": cleaned,
+            "title": cleaned_title,
+        }
+
+    def update_ignore_rule_metadata(self, rule_id: int, title: str, note: str) -> dict:
+        if rule_id <= 0:
+            raise ValueError("rule id is required")
+        cleaned_title = title.strip()
+        if len(cleaned_title) > 200:
+            raise ValueError("title exceeds 200 characters")
+        updated = self.state.set_ignore_rule_metadata(
+            rule_id, cleaned_title, note.strip()
+        )
+        if not updated:
+            raise ValueError(f"no silence rule with id {rule_id}")
+        return {"updated": True, "id": rule_id, "title": cleaned_title}
 
     def delete_ignore_rule(self, rule_id: int) -> dict:
         removed = self.state.delete_ignore_rule(rule_id)
@@ -572,6 +597,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self.service.add_ignore_rule(
                         str(body.get("service", "")),
                         str(body.get("pattern", "")),
+                        str(body.get("note", "")),
+                        str(body.get("title", "")),
+                    )
+                )
+            elif parsed.path == "/api/anomalies/rules/metadata":
+                self._send_json(
+                    self.service.update_ignore_rule_metadata(
+                        _as_int(body.get("id")),
+                        str(body.get("title", "")),
                         str(body.get("note", "")),
                     )
                 )
