@@ -16,3 +16,10 @@ auth.json
 targets.local.toml
 *.sqlite
 *.sqlite3
+
+# Frontend: built dashboard bundle (emitted by `npm --prefix frontend run build`)
+# and node deps. The bundle is produced in CI/Docker, not committed.
+/src/guiltyspark/web/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/*.tsbuildinfo
