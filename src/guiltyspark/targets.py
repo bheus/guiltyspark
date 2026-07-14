@@ -28,6 +28,7 @@ class Target:
     allowed_paths: tuple[str, ...] = ()
     max_changed_files: int = 12
     local_repo: Path | None = None
+    expected_logs_path: str = ""
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Target":
@@ -61,6 +62,18 @@ class Target:
             raise ValueError(f"target {target_id!r} requires allowed_paths in {mode} mode")
 
         local_repo_value = str(payload.get("local_repo", "")).strip()
+
+        # A repo-relative path (e.g. "docs/EXPECTED_LOGS.md") the Monitor fetches
+        # from the target repository so Codex can discount documented benign logs.
+        expected_logs_path = str(payload.get("expected_logs_path", "")).strip().strip("/")
+        if expected_logs_path and (
+            expected_logs_path.startswith("../") or "/../" in expected_logs_path
+        ):
+            raise ValueError(
+                f"target {target_id!r} expected_logs_path must be repo-relative "
+                f"without '..': {expected_logs_path!r}"
+            )
+
         return cls(
             id=target_id,
             loki_url=str(payload["loki_url"]).rstrip("/"),
@@ -72,6 +85,7 @@ class Target:
             allowed_paths=allowed_paths,
             max_changed_files=max_changed_files,
             local_repo=Path(local_repo_value).expanduser() if local_repo_value else None,
+            expected_logs_path=expected_logs_path,
         )
 
 
@@ -92,6 +106,7 @@ def target_to_payload(target: Target) -> dict[str, Any]:
         "allowed_paths": list(target.allowed_paths),
         "max_changed_files": target.max_changed_files,
         "local_repo": str(target.local_repo) if target.local_repo is not None else "",
+        "expected_logs_path": target.expected_logs_path,
     }
 
 

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from guiltyspark.agent import Analyzer
 from guiltyspark.config import Settings
+from guiltyspark.github_content import RepoDocClient
 from guiltyspark.github_pr import PrStatusClient
 from guiltyspark.grouping import group_incidents
 from guiltyspark.issues import plan_remediations
@@ -51,6 +52,7 @@ class Monitor:
         )
         self.remediator = Remediator(settings)
         self.pr_status = PrStatusClient(settings)
+        self.repo_docs = RepoDocClient(settings)
 
     async def run_once(self) -> RunSummary:
         end_ns = time.time_ns()
@@ -66,7 +68,8 @@ class Monitor:
         )
         incidents = group_incidents(events, min_events=self.settings.min_events)
         incidents = incidents[: self.settings.max_incidents_per_run]
-        findings = await self.analyzer.analyze(incidents, self.target)
+        expected_logs = self.repo_docs.expected_logs(self.target)
+        findings = await self.analyzer.analyze(incidents, self.target, expected_logs)
         new_findings = self._write_new_findings(findings)
         remediations = await self._remediate(findings, incidents)
         self.state.set_cursor_ns(end_ns, self.target_id)

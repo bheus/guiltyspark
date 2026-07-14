@@ -90,6 +90,7 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_DEDUP_ISSUES` | When enabled (default), remediation dedups on the *logical issue* rather than the exact fingerprint: Codex clusters near-duplicate anomalies into one persistent issue, only one representative is remediated per issue per run, and an issue whose PR is still open — or whose last PR merged/closed within the cooldown — is not re-filed. Costs a Codex call only when a genuinely new fingerprint appears (known fingerprints short-circuit from the store); falls back to per-fingerprint dedup on any Codex error. Requires the `codex` binary. Defaults to `true`. |
 | `GUILTYSPARK_ISSUE_COOLDOWN_SECONDS` | How long after an issue's last PR (merged or closed) to suppress re-filing it. Open PRs always suppress regardless of this value. Defaults to `604800` (7 days). |
 | `GUILTYSPARK_ISSUE_ACTIVE_WINDOW_SECONDS` | How far back known issues are considered when matching a new anomaly to an existing issue (bounds the clustering prompt). Defaults to `1209600` (14 days). |
+| `GUILTYSPARK_EXPECTED_LOGS_CACHE_SECONDS` | How long to cache each target's fetched `expected_logs_path` document before re-fetching it from GitHub. Defaults to `300` (5 minutes). |
 | `GITHUB_APP_ID` | GitHub App ID. Takes precedence over personal-token authentication. |
 | `GITHUB_APP_INSTALLATION_ID` | Installation ID for the account containing target repositories. |
 | `GITHUB_APP_PRIVATE_KEY` | App private key as literal or `\n`-escaped PEM. |
@@ -111,7 +112,16 @@ mode = "observe"
 test_commands = ["pytest -q"]
 allowed_paths = ["src", "tests"]
 max_changed_files = 8
+expected_logs_path = "docs/EXPECTED_LOGS.md"
 ```
+
+`expected_logs_path` (optional) is a repo-relative path to a document listing log
+lines the service emits that are *expected* or benign — deliberate warnings, startup
+chatter, retry notices. The Monitor fetches it from the target repository (private
+repos included, via the same GitHub auth) and hands it to Codex as context, so those
+patterns are not mistaken for anomalies. A missing or unreachable file is simply
+ignored — analysis proceeds without the extra context. The fetch is cached per
+`GUILTYSPARK_EXPECTED_LOGS_CACHE_SECONDS`.
 
 Target modes are deliberately progressive:
 

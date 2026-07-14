@@ -455,6 +455,7 @@ function openProtocolForm(target) {
   form.elements.max_changed_files.value = target ? target.max_changed_files : 12;
   form.elements.test_commands.value = target ? (target.test_commands || []).join("\n") : "";
   form.elements.allowed_paths.value = target ? (target.allowed_paths || []).join("\n") : "";
+  form.elements.expected_logs_path.value = target ? target.expected_logs_path || "" : "";
   setProtocolError("");
   form.hidden = false;
   form.elements.id.focus();
@@ -476,6 +477,7 @@ function protocolFormPayload(form) {
     max_changed_files: Number(form.elements.max_changed_files.value) || 12,
     test_commands: lines(form.elements.test_commands.value),
     allowed_paths: lines(form.elements.allowed_paths.value),
+    expected_logs_path: form.elements.expected_logs_path.value.trim(),
   };
 }
 
