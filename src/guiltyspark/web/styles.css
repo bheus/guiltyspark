@@ -244,6 +244,57 @@ h2 {
   max-width: 72ch;
 }
 
+.grouping-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.grouping-status[hidden] { display: none; }
+
+/* A Forerunner hard-light lattice assembling — tiles catalog into place. */
+.grouping-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 5px);
+  grid-auto-rows: 5px;
+  gap: 2px;
+  flex: none;
+}
+.grouping-grid i {
+  width: 5px;
+  height: 5px;
+  background: var(--seam);
+  opacity: 0.25;
+  box-shadow: none;
+  animation: grouping-tile 1.6s ease-in-out infinite;
+}
+/* Staggered delays sweep the "assembly" across the lattice, then it repeats. */
+.grouping-grid i:nth-child(1)  { animation-delay: 0.00s; }
+.grouping-grid i:nth-child(2)  { animation-delay: 0.10s; }
+.grouping-grid i:nth-child(3)  { animation-delay: 0.20s; }
+.grouping-grid i:nth-child(4)  { animation-delay: 0.30s; }
+.grouping-grid i:nth-child(5)  { animation-delay: 0.10s; }
+.grouping-grid i:nth-child(6)  { animation-delay: 0.20s; }
+.grouping-grid i:nth-child(7)  { animation-delay: 0.30s; }
+.grouping-grid i:nth-child(8)  { animation-delay: 0.40s; }
+.grouping-grid i:nth-child(9)  { animation-delay: 0.20s; }
+.grouping-grid i:nth-child(10) { animation-delay: 0.30s; }
+.grouping-grid i:nth-child(11) { animation-delay: 0.40s; }
+.grouping-grid i:nth-child(12) { animation-delay: 0.50s; }
+@keyframes grouping-tile {
+  0%, 70%, 100% { opacity: 0.25; background: var(--seam); box-shadow: none; }
+  25% {
+    opacity: 1;
+    background: var(--eye);
+    box-shadow: 0 0 5px var(--eye), 0 0 10px rgba(95, 212, 244, 0.5);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .grouping-grid i { animation: none; opacity: 0.6; }
+}
+
 .columns {
   display: grid;
   grid-template-columns: 1fr 1fr;

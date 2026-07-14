@@ -21,6 +21,19 @@ from guiltyspark.state import StateStore
 from guiltyspark.targets import Target
 
 
+def _wait_for_clustering(service, timeout: float = 5.0) -> None:
+    """Block until the background clustering worker has published (or cleared)."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with service._cluster_lock:
+            if service._cluster_pending is None:
+                return
+        time.sleep(0.01)
+    raise AssertionError("clustering worker did not finish within timeout")
+
+
 def _settings(tmp_path: Path, **overrides) -> Settings:
     defaults = dict(
         loki_url="http://loki.invalid:3100",
@@ -208,7 +221,48 @@ class TestDashboardService:
         ]
         self._fake_loki(monkeypatch, events)
         service = DashboardService(_settings(tmp_path), [_target()])
-        assert "groups" not in service.anomalies(minutes=60)
+        result = service.anomalies(minutes=60)
+        assert "groups" not in result
+        # Grouping disabled must not advertise a pending state.
+        assert "groups_pending" not in result
+
+    def test_grouping_pending_flag_until_worker_publishes(
+        self, tmp_path, monkeypatch
+    ):
+        import guiltyspark.dashboard as dashboard
+        from guiltyspark.clustering import AnomalyGroup
+
+        events = [
+            LogEvent(ts_ns=1, labels={"container": "loki"}, line="error alpha"),
+            LogEvent(ts_ns=2, labels={"container": "loki"}, line="error beta"),
+        ]
+        self._fake_loki(monkeypatch, events)
+
+        def fake_cluster(settings, incidents):
+            return [
+                AnomalyGroup(
+                    title="loki subsystem",
+                    summary="same class",
+                    fingerprints=[i.fingerprint for i in incidents],
+                )
+            ]
+
+        monkeypatch.setattr(dashboard, "cluster_incidents", fake_cluster)
+        service = DashboardService(
+            _settings(tmp_path, dashboard_grouping=True), [_target()]
+        )
+
+        # First poll: worker dispatched, no groups yet, pending flag set.
+        first = service.anomalies(minutes=60)
+        assert "groups" not in first
+        assert first["groups_pending"] is True
+
+        _wait_for_clustering(service)
+
+        # Once published, groups are served and the pending flag is gone.
+        second = service.anomalies(minutes=60)
+        assert second["groups"]
+        assert "groups_pending" not in second
 
     def test_grouping_clusters_and_caches(self, tmp_path, monkeypatch):
         import guiltyspark.dashboard as dashboard
@@ -221,9 +275,6 @@ class TestDashboardService:
         self._fake_loki(monkeypatch, events)
         service = DashboardService(
             _settings(tmp_path, dashboard_grouping=True), [_target()]
-        )
-        fps = sorted(
-            i["fingerprint"] for i in service.anomalies(minutes=60)["incidents"]
         )
 
         calls = {"n": 0}
@@ -238,11 +289,21 @@ class TestDashboardService:
                 )
             ]
 
+        # Patch before the first poll so the background worker never touches the
+        # real (Codex-backed) clusterer.
         monkeypatch.setattr(dashboard, "cluster_incidents", fake_cluster)
 
+        # Clustering runs off the request path: the first poll only kicks off the
+        # background worker and returns the flat list (no groups yet).
         first = service.anomalies(minutes=60)
+        assert "groups" not in first
+        fps = sorted(i["fingerprint"] for i in first["incidents"])
+        _wait_for_clustering(service)
         assert calls["n"] == 1
-        groups = first["groups"]
+
+        # A later poll, after the worker published, serves the cached clusters.
+        second = service.anomalies(minutes=60)
+        groups = second["groups"]
         assert len(groups) == 1
         group = groups[0]
         assert group["title"] == "loki subsystem"
