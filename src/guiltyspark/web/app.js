@@ -203,6 +203,7 @@ async function loadAnomalies() {
   silenceAll.textContent = unassigned.length > 1 ? `Silence all ${unassigned.length}` : "Silence all";
   const groups = data.groups;
   groupsById = {};
+  $("grouping-status").hidden = !data.groups_pending;
   if (groups && groups.length) {
     groups.forEach((g) => { groupsById[g.id] = g; });
     $("unassigned-list").innerHTML = groups.map(renderGroup).join("");

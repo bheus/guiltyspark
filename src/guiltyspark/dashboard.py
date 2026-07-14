@@ -174,6 +174,9 @@ class DashboardService:
         self._cluster_lock = threading.Lock()
         self._cluster_sig: tuple[str, ...] | None = None
         self._cluster_groups: list[AnomalyGroup] = []
+        # Signature currently being clustered off-thread, so a burst of polls
+        # spawns at most one worker per distinct anomaly set.
+        self._cluster_pending: tuple[str, ...] | None = None
         # Resolves each opened PR's live disposition (merged/closed/open); its own
         # TTL cache keeps the auto-refresh from hammering the GitHub API.
         self._pr_status = PrStatusClient(settings)
@@ -428,6 +431,11 @@ class DashboardService:
         groups = self._grouped_unassigned(unassigned, entry_by_fp)
         if groups is not None:
             response["groups"] = groups
+        elif self.settings.dashboard_grouping and unassigned:
+            # Grouping is on and there are anomalies to cluster, but the result
+            # is not cached yet — a worker is computing it off-thread. Signal the
+            # UI so it can show a "cataloging" state over the flat fallback list.
+            response["groups_pending"] = True
         return response
 
     def _grouped_unassigned(
@@ -438,9 +446,10 @@ class DashboardService:
         list). A Codex failure degrades silently rather than breaking the view."""
         if not self.settings.dashboard_grouping or not incidents:
             return None
-        try:
-            clusters = self._cluster_cached(incidents)
-        except Exception:
+        clusters = self._cluster_cached(incidents)
+        if clusters is None:
+            # Clustering for this anomaly set is not ready yet (computing
+            # off-thread); the UI shows the flat list until a later poll.
             return None
         display = []
         for index, cluster in enumerate(clusters):
@@ -464,15 +473,42 @@ class DashboardService:
             )
         return display
 
-    def _cluster_cached(self, incidents: list[Incident]) -> list[AnomalyGroup]:
+    def _cluster_cached(self, incidents: list[Incident]) -> list[AnomalyGroup] | None:
+        """Return cached clusters for this anomaly set, or None while they are
+        computed off-thread. Codex clustering is slow, so it never runs inline
+        on the dashboard request path; a background worker fills the cache and a
+        later poll picks it up."""
         signature = tuple(sorted(incident.fingerprint for incident in incidents))
         with self._cluster_lock:
             if signature == self._cluster_sig:
                 return self._cluster_groups
+            if signature != self._cluster_pending:
+                self._cluster_pending = signature
+                worker = threading.Thread(
+                    target=self._cluster_worker,
+                    args=(signature, list(incidents)),
+                    daemon=True,
+                )
+                worker.start()
+            return None
+
+    def _cluster_worker(
+        self, signature: tuple[str, ...], incidents: list[Incident]
+    ) -> None:
+        """Cluster off the request path and publish the result under its
+        signature. Failures clear the pending marker so a later poll retries."""
+        try:
             groups = cluster_incidents(self.settings, incidents)
+        except Exception:
+            with self._cluster_lock:
+                if self._cluster_pending == signature:
+                    self._cluster_pending = None
+            return
+        with self._cluster_lock:
             self._cluster_sig = signature
             self._cluster_groups = groups
-            return groups
+            if self._cluster_pending == signature:
+                self._cluster_pending = None
 
     def _bucket_for(self, labels: dict[str, str]) -> str:
         selectors = [
