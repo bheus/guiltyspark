@@ -1,3 +1,13 @@
+# Stage 1: build the React dashboard bundle. Vite emits into
+# /app/src/guiltyspark/web (outDir "../src/guiltyspark/web" relative to
+# /app/frontend), which the Python stage copies into the package.
+FROM node:20-slim AS web
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /bin/
@@ -22,6 +32,10 @@ ENV CODEX_HOME=/data/codex
 
 COPY pyproject.toml uv.lock README.md targets.example.toml ./
 COPY src ./src
+# Bundled dashboard from the web stage (src/guiltyspark/web is .dockerignored,
+# so this is the only copy that lands in the image — before uv sync so the
+# built wheel includes it).
+COPY --from=web /app/src/guiltyspark/web ./src/guiltyspark/web
 COPY knowledge ./knowledge
 COPY docker-entrypoint.sh /usr/local/bin/guiltyspark-entrypoint
 

@@ -485,6 +485,22 @@ class TestHTTPServer:
         status, _ = _get(dashboard_server + "/..%2Fdashboard.py")
         assert status == 404
 
+    def test_serves_hashed_bundle_asset(self, dashboard_server):
+        # The built index.html references a hashed asset under assets/; the
+        # relaxed static handler must serve that nested path.
+        import re
+
+        status, body = _get(dashboard_server + "/")
+        assert status == 200
+        match = re.search(rb"(assets/[A-Za-z0-9._-]+\.js)", body)
+        assert match, "index.html should reference a hashed assets/*.js bundle"
+        status, _ = _get(f"{dashboard_server}/{match.group(1).decode()}")
+        assert status == 200
+
+    def test_rejects_assets_traversal(self, dashboard_server):
+        status, _ = _get(dashboard_server + "/assets/..%2F..%2Fdashboard.py")
+        assert status == 404
+
     def test_target_create_list_delete(self, dashboard_server):
         payload = {
             "id": "store",

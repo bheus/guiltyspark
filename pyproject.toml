@@ -23,6 +23,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/guiltyspark"]
+# The dashboard bundle (src/guiltyspark/web) is git-ignored build output, so it
+# must be force-included or hatchling would omit it from the wheel.
+artifacts = ["src/guiltyspark/web/**"]
 
 [tool.semantic_release]
 allow_zero_version = true

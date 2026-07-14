@@ -27,7 +27,7 @@ That is not incidental branding — see the voice section below.
 | File | Responsibility |
 | --- | --- |
 | `cli.py` | Entry point; subcommands `once`, `daemon`, `doctor`, `replay`, `dashboard`. |
-| `dashboard.py` | Web dashboard: JSON API + static frontend (`web/`); classifies live errors into target buckets. |
+| `dashboard.py` | Web dashboard: JSON API + serves the built React bundle from `web/`; classifies live errors into target buckets. |
 | `config.py` | Environment-variable-driven `Settings`. |
 | `loki.py` | Loki query client. |
 | `grouping.py` | Collapses raw log lines into incidents. |
@@ -84,6 +84,17 @@ docker build -t guiltyspark:local .         # build locally
 
 Tests live in `tests/` and mirror the modules (`test_agent_json.py`, `test_remediation.py`,
 `test_targets.py`, etc.). Add coverage alongside behavior changes.
+
+### Frontend
+
+The dashboard UI is a React + TypeScript (Vite) app in `frontend/`. It builds into
+`src/guiltyspark/web/`, which `dashboard.py` serves via `importlib.resources`. That
+directory is **git-ignored build output** — Docker builds it in a Node stage and the
+wheel force-includes it (`tool.hatch.build.targets.wheel.artifacts`). For UI work run
+`npm --prefix frontend run dev` (Vite dev server, proxies `/api` to a dashboard on
+:8343); to serve the real bundle from Python, `npm --prefix frontend run build`. The
+client talks only to the JSON API — keep that boundary. Operator-facing strings stay in
+the Guilty Spark voice (see below).
 
 ## Conventions
 

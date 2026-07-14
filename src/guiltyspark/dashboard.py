@@ -84,6 +84,8 @@ _CONTENT_TYPES = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".json": "application/json; charset=utf-8",
 }
 
 
@@ -713,15 +715,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_static(self, path: str) -> None:
         name = path.lstrip("/") or "index.html"
-        if "/" in name or name.startswith("."):
+        parts = name.split("/")
+        # Reject empty, hidden, or traversal segments outright.
+        unsafe = any(
+            (not part or part in (".", "..") or part.startswith("."))
+            for part in parts
+        )
+        # The Vite bundle is flat top-level files (index.html) plus a single
+        # assets/ subdirectory of hashed js/css; nothing deeper is served.
+        is_asset = len(parts) == 2 and parts[0] == "assets"
+        is_top = len(parts) == 1
+        if unsafe or not (is_asset or is_top):
             self.send_error(404)
             return
-        resource = resources.files("guiltyspark").joinpath("web", name)
+        resource = resources.files("guiltyspark").joinpath("web", *parts)
         if not resource.is_file():
             self.send_error(404)
             return
         body = resource.read_bytes()
-        suffix = Path(name).suffix
+        suffix = Path(parts[-1]).suffix
         self.send_response(200)
         self.send_header(
             "Content-Type", _CONTENT_TYPES.get(suffix, "application/octet-stream")

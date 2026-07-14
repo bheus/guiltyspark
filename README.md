@@ -59,6 +59,27 @@ Run tests locally with:
 uv run --no-editable pytest
 ```
 
+### Dashboard frontend
+
+The dashboard UI is a React + TypeScript app in `frontend/` (Vite). Its build
+output lands in `src/guiltyspark/web/`, which the Python backend serves via
+`importlib.resources`. That directory is **git-ignored build output** — the Docker
+image builds it in a Node stage, and the wheel force-includes it.
+
+```bash
+# Day-to-day UI work: Vite dev server (proxies /api to a running dashboard on :8343)
+guiltyspark dashboard &            # or run the daemon/compose service
+npm --prefix frontend install
+npm --prefix frontend run dev      # open the printed http://localhost:5173
+
+# Produce the bundle the Python server serves directly
+npm --prefix frontend run build
+```
+
+Because `src/guiltyspark/web/` is not committed, a bare `guiltyspark dashboard`
+from a fresh checkout serves nothing until you run the build once (or use the dev
+server). Docker builds handle this automatically.
+
 ## Configuration
 
 All settings are environment variables. The most important ones are:
@@ -217,12 +238,14 @@ The dashboard is also the control surface for configuration:
   and event count so the entry stays legible after it leaves the stream, and each entry
   carries an editable triage note for your own reference. Any entry can be restored.
 
-The page is static HTML/JS that talks only to the JSON API. Read endpoints:
-`/api/overview`, `/api/findings`, `/api/remediations`, `/api/anomalies?minutes=N`,
-`/api/targets`, `/api/anomalies/ignored`. Write endpoints: `POST`/`DELETE
-/api/targets`, `POST`/`DELETE /api/anomalies/ignore`, and `POST /api/anomalies/note`
-(edit a silenced anomaly's triage note). A richer frontend (e.g. Vue) can replace the
-client later without backend changes.
+The page is a React + TypeScript app (in `frontend/`, see Development above) that
+talks only to the JSON API, so backend and client evolve independently. It polls
+every 60s and reconciles in place — open incident cards and in-progress edits
+survive a refresh. Read endpoints: `/api/overview`, `/api/findings`,
+`/api/remediations`, `/api/anomalies?minutes=N`, `/api/targets`,
+`/api/anomalies/ignored`. Write endpoints: `POST`/`DELETE /api/targets`,
+`POST`/`DELETE /api/anomalies/ignore`, and `POST /api/anomalies/note` (edit a
+silenced anomaly's triage note).
 
 The dashboard is **unauthenticated**, and it can now modify configuration and trigger
 target changes. Keep it on a trusted LAN and do not expose it to the public internet.
