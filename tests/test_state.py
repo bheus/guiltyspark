@@ -175,6 +175,23 @@ class StateStoreTests(unittest.TestCase):
             store.record_issue_member("abraham", "fp1", "other")
             self.assertEqual(store.issue_for_fingerprint("abraham", "fp1"), "iss1")
 
+    def test_recent_remediations_paginates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            from pathlib import Path
+
+            store = StateStore(Path(tmp) / "state.sqlite3")
+            for i in range(5):
+                store.record_remediation("web", f"fp{i}", "pr-opened", "ok")
+
+            self.assertEqual(store.count_remediations(), 5)
+            # Newest first (last inserted has the highest id).
+            page1 = store.recent_remediations(limit=2, offset=0)
+            self.assertEqual([r["fingerprint"] for r in page1], ["fp4", "fp3"])
+            page2 = store.recent_remediations(limit=2, offset=2)
+            self.assertEqual([r["fingerprint"] for r in page2], ["fp2", "fp1"])
+            page3 = store.recent_remediations(limit=2, offset=4)
+            self.assertEqual([r["fingerprint"] for r in page3], ["fp0"])
+
     def test_ignore_anomalies_batch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             from pathlib import Path

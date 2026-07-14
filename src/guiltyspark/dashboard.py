@@ -134,11 +134,18 @@ def selector_matches(matchers: list[LabelMatcher], labels: dict[str, str]) -> bo
     return bool(matchers) and all(matcher.matches(labels) for matcher in matchers)
 
 
-def tail_findings(path: Path, limit: int) -> list[dict]:
-    """Return the newest `limit` findings from the JSONL findings log."""
+def tail_findings(path: Path, limit: int, offset: int = 0) -> tuple[list[dict], int]:
+    """Return one newest-first page of findings plus the total available.
+
+    ``offset`` counts back from the newest entry, so ``(limit=30, offset=30)``
+    yields the 31st–60th most recent findings. The JSONL log is read once; only
+    the newest ``limit + offset`` payloads are retained to bound memory.
+    """
     if not path.exists():
-        return []
-    kept: deque[dict] = deque(maxlen=limit)
+        return [], 0
+    offset = max(0, offset)
+    kept: deque[dict] = deque(maxlen=limit + offset)
+    total = 0
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -150,7 +157,9 @@ def tail_findings(path: Path, limit: int) -> list[dict]:
                 continue
             payload.pop("raw", None)
             kept.append(payload)
-    return list(reversed(kept))
+            total += 1
+    page = list(reversed(kept))[offset : offset + limit]
+    return page, total
 
 
 class DashboardService:
@@ -316,14 +325,18 @@ class DashboardService:
         restored = self.state.unignore_anomaly(fingerprint)
         return {"restored": restored, "fingerprint": fingerprint}
 
-    def findings(self, limit: int = 50) -> dict:
+    def findings(self, limit: int = 50, offset: int = 0) -> dict:
+        page, total = tail_findings(self.settings.findings_path, limit, offset)
         return {
             "generated_at": _now_iso(),
-            "findings": tail_findings(self.settings.findings_path, limit),
+            "findings": page,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
         }
 
-    def remediations(self, limit: int = 50) -> dict:
-        records = self.state.recent_remediations(limit)
+    def remediations(self, limit: int = 50, offset: int = 0) -> dict:
+        records = self.state.recent_remediations(limit, offset)
         for record in records:
             status = self._pr_status.status(record.get("pr_url"))
             if status is not None:
@@ -333,6 +346,9 @@ class DashboardService:
         return {
             "generated_at": _now_iso(),
             "remediations": records,
+            "total": self.state.count_remediations(),
+            "limit": limit,
+            "offset": offset,
         }
 
     def anomalies(self, minutes: int = 60) -> dict:
@@ -497,10 +513,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/overview":
                 self._send_json(self.service.overview())
             elif parsed.path == "/api/findings":
-                self._send_json(self.service.findings(_bounded(query, "limit", 50, 500)))
+                self._send_json(
+                    self.service.findings(
+                        _bounded(query, "limit", 50, 500),
+                        _offset(query),
+                    )
+                )
             elif parsed.path == "/api/remediations":
                 self._send_json(
-                    self.service.remediations(_bounded(query, "limit", 50, 500))
+                    self.service.remediations(
+                        _bounded(query, "limit", 50, 500),
+                        _offset(query),
+                    )
                 )
             elif parsed.path == "/api/anomalies":
                 self._send_json(
@@ -651,6 +675,15 @@ def _bounded(query: dict[str, list[str]], key: str, default: int, maximum: int) 
     except ValueError:
         return default
     return max(1, min(value, maximum))
+
+
+def _offset(query: dict[str, list[str]]) -> int:
+    """Non-negative pagination offset; malformed or negative values clamp to 0."""
+    raw = query.get("offset", ["0"])[0]
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
 
 
 def make_server(

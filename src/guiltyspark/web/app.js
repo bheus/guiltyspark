@@ -4,7 +4,10 @@
 "use strict";
 
 const REFRESH_MS = 60_000;
+const PAGE_SIZE = 30;
 let windowMinutes = 60;
+let findingsPage = 0;
+let measuresPage = 0;
 let unassignedByFp = {};
 
 const $ = (id) => document.getElementById(id);
@@ -249,11 +252,39 @@ function renderFinding(finding) {
     </details>`;
 }
 
+// Newest-first paging shared by the two archive panels. Renders nothing when a
+// single page holds everything, so short histories stay uncluttered.
+function renderPager(elId, page, total) {
+  const el = $(elId);
+  if (!el) return;
+  if (total <= PAGE_SIZE) {
+    el.innerHTML = "";
+    return;
+  }
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const start = page * PAGE_SIZE + 1;
+  const end = Math.min(total, (page + 1) * PAGE_SIZE);
+  el.innerHTML = `
+    <button class="btn" data-dir="-1" ${page <= 0 ? "disabled" : ""}>‹ Newer</button>
+    <span class="pager-label">${start}–${end} of ${total} · page ${page + 1} / ${pages}</span>
+    <button class="btn" data-dir="1" ${page + 1 >= pages ? "disabled" : ""}>Earlier ›</button>`;
+}
+
 async function loadFindings() {
-  const data = await getJSON("/api/findings?limit=30");
+  const data = await getJSON(
+    `/api/findings?limit=${PAGE_SIZE}&offset=${findingsPage * PAGE_SIZE}`,
+  );
+  const total = data.total || 0;
+  // A cleanup can shrink the archive beneath the page being viewed; step back.
+  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  if (findingsPage > lastPage) {
+    findingsPage = lastPage;
+    return loadFindings();
+  }
   $("findings-list").innerHTML = data.findings.length
     ? data.findings.map(renderFinding).join("")
     : `<p class="empty-state">The archive holds no catalogued findings yet, Reclaimer.</p>`;
+  renderPager("findings-pager", findingsPage, total);
 }
 
 /* ---- remediations ---- */
@@ -294,10 +325,19 @@ function renderMeasure(item) {
 }
 
 async function loadMeasures() {
-  const data = await getJSON("/api/remediations?limit=30");
+  const data = await getJSON(
+    `/api/remediations?limit=${PAGE_SIZE}&offset=${measuresPage * PAGE_SIZE}`,
+  );
+  const total = data.total || 0;
+  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  if (measuresPage > lastPage) {
+    measuresPage = lastPage;
+    return loadMeasures();
+  }
   $("measures-list").innerHTML = data.remediations.length
     ? data.remediations.map(renderMeasure).join("")
     : `<p class="empty-state">No corrective measures have been required. The installation functions within tolerances.</p>`;
+  renderPager("measures-pager", measuresPage, total);
 }
 
 /* ---- silenced anomalies ---- */
@@ -467,6 +507,21 @@ async function refresh() {
   }
   $("footer-refresh").textContent = `Last survey: ${fmtTime(new Date().toISOString())} · resurveying every 60s`;
 }
+
+// Pager containers persist across refreshes, so wire them once via delegation.
+$("findings-pager").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-dir]");
+  if (!button || button.disabled) return;
+  findingsPage = Math.max(0, findingsPage + Number(button.dataset.dir));
+  loadFindings();
+});
+
+$("measures-pager").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-dir]");
+  if (!button || button.disabled) return;
+  measuresPage = Math.max(0, measuresPage + Number(button.dataset.dir));
+  loadMeasures();
+});
 
 $("window-picker").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-minutes]");
