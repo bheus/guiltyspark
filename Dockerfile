@@ -10,7 +10,7 @@ WORKDIR /app
 RUN mkdir -p /workspace
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates git \
+    && apt-get install -y --no-install-recommends curl ca-certificates git sqlite3 \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_HOME=/opt/codex CODEX_NON_INTERACTIVE=1 sh \
     && codex_bin="$(find /opt/codex /root -type f -name codex -perm -111 2>/dev/null | head -n 1)" \
