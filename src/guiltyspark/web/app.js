@@ -4,7 +4,7 @@
 "use strict";
 
 const REFRESH_MS = 60_000;
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 10;
 let windowMinutes = 60;
 let findingsPage = 0;
 let measuresPage = 0;
