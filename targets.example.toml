@@ -11,5 +11,10 @@ test_commands = [
 allowed_paths = ["src", "tests"]
 max_changed_files = 8
 
+# Optional. Repo-relative path to a document of expected/benign log lines; the
+# Monitor fetches it from the target repo and gives it to Codex so documented
+# noise is not reported as an anomaly.
+# expected_logs_path = "docs/EXPECTED_LOGS.md"
+
 # Optional for local replay. Production should omit this so GuiltySpark clones GitHub.
 # local_repo = "/path/to/inventory-service"

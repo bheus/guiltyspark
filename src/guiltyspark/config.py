@@ -66,6 +66,7 @@ class Settings:
     dedup_issues: bool = True
     issue_cooldown_seconds: int = 604800
     issue_active_window_seconds: int = 1209600
+    expected_logs_cache_seconds: int = 300
     targets_path: Path | None = None
     targets_json: str | None = None
     remediation_root: Path = Path("data/remediation")
@@ -113,6 +114,9 @@ class Settings:
             issue_cooldown_seconds=_int("GUILTYSPARK_ISSUE_COOLDOWN_SECONDS", 604800),
             issue_active_window_seconds=_int(
                 "GUILTYSPARK_ISSUE_ACTIVE_WINDOW_SECONDS", 1209600
+            ),
+            expected_logs_cache_seconds=_int(
+                "GUILTYSPARK_EXPECTED_LOGS_CACHE_SECONDS", 300
             ),
             targets_path=(
                 Path(value)

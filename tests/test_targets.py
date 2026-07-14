@@ -109,6 +109,44 @@ mode = "fix"
         rebuilt = Target.from_dict(target_to_payload(original))
         self.assertEqual(original, rebuilt)
 
+    def test_expected_logs_path_parses_and_round_trips(self) -> None:
+        original = Target.from_dict(
+            {
+                "id": "worker",
+                "loki_url": "http://loki:3100",
+                "loki_query": '{container="worker"}',
+                "github_repo": "example/worker",
+                "expected_logs_path": "/docs/EXPECTED_LOGS.md/",
+            }
+        )
+        # Leading/trailing slashes are stripped to a clean repo-relative path.
+        self.assertEqual(original.expected_logs_path, "docs/EXPECTED_LOGS.md")
+        rebuilt = Target.from_dict(target_to_payload(original))
+        self.assertEqual(original, rebuilt)
+
+    def test_expected_logs_path_defaults_empty(self) -> None:
+        target = Target.from_dict(
+            {
+                "id": "worker",
+                "loki_url": "http://loki:3100",
+                "loki_query": '{container="worker"}',
+                "github_repo": "example/worker",
+            }
+        )
+        self.assertEqual(target.expected_logs_path, "")
+
+    def test_expected_logs_path_rejects_traversal(self) -> None:
+        with self.assertRaisesRegex(ValueError, "expected_logs_path"):
+            Target.from_dict(
+                {
+                    "id": "worker",
+                    "loki_url": "http://loki:3100",
+                    "loki_query": '{container="worker"}',
+                    "github_repo": "example/worker",
+                    "expected_logs_path": "../../etc/passwd",
+                }
+            )
+
     def test_load_from_store_skips_invalid_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(Path(tmp) / "state.sqlite3")
