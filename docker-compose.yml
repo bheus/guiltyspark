@@ -71,6 +71,7 @@ services:
       - LOKI_BEARER_TOKEN=${LOKI_BEARER_TOKEN:-}
       - LOKI_BASIC_AUTH=${LOKI_BASIC_AUTH:-}
       - GUILTYSPARK_DASHBOARD_PORT=${GUILTYSPARK_DASHBOARD_PORT:-8343}
+      - GUILTYSPARK_DASHBOARD_GROUPING=${GUILTYSPARK_DASHBOARD_GROUPING:-false}
       # Needed to read live PR dispositions, including in private repositories.
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_APP_ID=${GITHUB_APP_ID:-}
