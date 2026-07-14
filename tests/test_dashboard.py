@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import urllib.request
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -427,6 +428,33 @@ class TestDashboardService:
 
 
 @pytest.fixture()
+def built_bundle():
+    """Fabricate a minimal dashboard bundle so the static-serving tests do not
+    depend on a real `npm run build`. src/guiltyspark/web is git-ignored build
+    output that may be absent; we create just enough (index.html + one hashed
+    asset) and remove only what we added."""
+    web = Path(str(resources.files("guiltyspark").joinpath("web")))
+    assets = web / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    index = web / "index.html"
+    asset = assets / "index-test.js"
+    created = []
+    if not index.exists():
+        index.write_text(
+            '<!doctype html><meta charset="utf-8"><title>343 Guilty Spark</title>'
+            '<script type="module" src="./assets/index-test.js"></script>',
+            encoding="utf-8",
+        )
+        created.append(index)
+    if not asset.exists():
+        asset.write_text("console.log('monitor online');\n", encoding="utf-8")
+        created.append(asset)
+    yield
+    for path in created:
+        path.unlink(missing_ok=True)
+
+
+@pytest.fixture()
 def dashboard_server(tmp_path):
     settings = _settings(tmp_path)
     settings.findings_path.write_text(
@@ -461,7 +489,7 @@ def _request(method: str, url: str, body: dict | None = None) -> tuple[int, dict
 
 
 class TestHTTPServer:
-    def test_serves_index(self, dashboard_server):
+    def test_serves_index(self, built_bundle, dashboard_server):
         status, body = _get(dashboard_server + "/")
         assert status == 200
         assert b"Guilty Spark" in body
@@ -485,7 +513,7 @@ class TestHTTPServer:
         status, _ = _get(dashboard_server + "/..%2Fdashboard.py")
         assert status == 404
 
-    def test_serves_hashed_bundle_asset(self, dashboard_server):
+    def test_serves_hashed_bundle_asset(self, built_bundle, dashboard_server):
         # The built index.html references a hashed asset under assets/; the
         # relaxed static handler must serve that nested path.
         import re
