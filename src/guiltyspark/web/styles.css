@@ -484,6 +484,23 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 
 .panel-head .btn { margin-left: auto; }
 
+/* ---- pager ---- */
+.pager:empty { display: none; }
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.pager .btn[disabled] { opacity: 0.4; cursor: default; }
+.pager .btn[disabled]:hover { border-color: var(--seam-dim); color: var(--ink-dim); }
+.pager-label {
+  font-family: var(--data);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
 .inc-actions { display: flex; gap: 6px; margin-left: auto; flex: none; }
 .inc-actions .btn { padding: 2px 9px; }
 

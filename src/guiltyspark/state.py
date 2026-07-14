@@ -181,12 +181,16 @@ class StateStore:
                 (status, error, target_id, fingerprint),
             )
 
-    def recent_remediations(self, limit: int = 50) -> list[dict]:
+    def count_remediations(self) -> int:
+        with self._connect() as db:
+            return int(db.execute("select count(*) from remediations").fetchone()[0])
+
+    def recent_remediations(self, limit: int = 50, offset: int = 0) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
                 "select target_id, fingerprint, status, branch, pr_url, created_at "
-                "from remediations order by id desc limit ?",
-                (limit,),
+                "from remediations order by id desc limit ? offset ?",
+                (limit, max(0, offset)),
             ).fetchall()
         return [
             {

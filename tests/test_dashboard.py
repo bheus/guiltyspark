@@ -127,17 +127,32 @@ class TestTailFindings:
             for i in range(5)
         ]
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        found = tail_findings(path, limit=3)
+        found, total = tail_findings(path, limit=3)
         assert [item["title"] for item in found] == ["finding 4", "finding 3", "finding 2"]
         assert all("raw" not in item for item in found)
+        assert total == 5
+
+    def test_offset_pages_back_through_history(self, tmp_path):
+        path = tmp_path / "findings.jsonl"
+        lines = [json.dumps({"title": f"finding {i}"}) for i in range(5)]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        page, total = tail_findings(path, limit=2, offset=2)
+        assert [item["title"] for item in page] == ["finding 2", "finding 1"]
+        assert total == 5
+        # An offset past the end yields an empty page but the true total.
+        tail, tail_total = tail_findings(path, limit=2, offset=10)
+        assert tail == []
+        assert tail_total == 5
 
     def test_skips_malformed_lines(self, tmp_path):
         path = tmp_path / "findings.jsonl"
         path.write_text('not json\n{"title": "ok"}\n', encoding="utf-8")
-        assert [item["title"] for item in tail_findings(path, 10)] == ["ok"]
+        page, total = tail_findings(path, 10)
+        assert [item["title"] for item in page] == ["ok"]
+        assert total == 1
 
     def test_missing_file(self, tmp_path):
-        assert tail_findings(tmp_path / "absent.jsonl", 10) == []
+        assert tail_findings(tmp_path / "absent.jsonl", 10) == ([], 0)
 
 
 class TestDashboardService:
