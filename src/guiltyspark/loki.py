@@ -50,6 +50,26 @@ class LokiClient:
         events.sort(key=lambda event: event.ts_ns)
         return events
 
+    def label_values(self, label: str, start_ns: int, end_ns: int) -> list[str]:
+        """Return the sorted values seen for a label within the time window."""
+        params = urllib.parse.urlencode({"start": str(start_ns), "end": str(end_ns)})
+        request = urllib.request.Request(
+            f"{self.base_url.rstrip('/')}/loki/api/v1/label/"
+            f"{urllib.parse.quote(label, safe='')}/values?{params}",
+            headers=self._headers(),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Loki label query failed with HTTP {exc.code}: {body}") from exc
+
+        if payload.get("status") != "success":
+            raise RuntimeError(f"Loki label query failed: {payload}")
+
+        return sorted(str(value) for value in payload.get("data") or [])
+
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if self.bearer_token:

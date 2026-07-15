@@ -11,11 +11,13 @@ import pytest
 from guiltyspark.config import Settings
 from guiltyspark.dashboard import (
     DashboardService,
+    _containers_param,
     make_server,
     parse_stream_selector,
     selector_matches,
     tail_findings,
     validate_pattern,
+    with_label_filter,
 )
 from guiltyspark.models import LogEvent
 from guiltyspark.state import StateStore
@@ -111,6 +113,57 @@ class TestSelectorMatches:
         assert not selector_matches([], {"container": "anything"})
 
 
+class TestWithLabelFilter:
+    def test_appends_to_existing_matchers(self):
+        assert (
+            with_label_filter('{job=~".+"}', "container", ["abraham"])
+            == '{job=~".+", container=~"abraham"}'
+        )
+
+    def test_multiple_values_join_as_alternation(self):
+        assert (
+            with_label_filter('{job=~".+"}', "container", ["a", "b"])
+            == '{job=~".+", container=~"a|b"}'
+        )
+
+    def test_regex_metacharacters_are_escaped(self):
+        result = with_label_filter('{job=~".+"}', "container", ["app.v1+x"])
+        assert result == '{job=~".+", container=~"app\\\\.v1\\\\+x"}'
+
+    def test_empty_selector_gets_no_leading_comma(self):
+        assert with_label_filter("{}", "container", ["a"]) == '{container=~"a"}'
+
+    def test_no_values_is_a_noop(self):
+        assert with_label_filter('{job=~".+"}', "container", []) == '{job=~".+"}'
+
+    def test_no_selector_is_a_noop(self):
+        assert with_label_filter("count_over_time", "container", ["a"]) == "count_over_time"
+
+    def test_pipeline_is_preserved(self):
+        assert (
+            with_label_filter('{job="d"} |= "err"', "container", ["a"])
+            == '{job="d", container=~"a"} |= "err"'
+        )
+
+
+class TestContainersParam:
+    def test_comma_separated_and_repeated(self):
+        assert _containers_param({"container": ["a,b", "c"]}) == ["a", "b", "c"]
+
+    def test_dedupes_and_strips(self):
+        assert _containers_param({"container": [" a , a ", "a"]}) == ["a"]
+
+    def test_missing_param(self):
+        assert _containers_param({}) == []
+
+    def test_caps_entry_count(self):
+        raw = ",".join(f"c{i}" for i in range(80))
+        assert len(_containers_param({"container": [raw]})) == 50
+
+    def test_drops_oversized_values(self):
+        assert _containers_param({"container": ["x" * 500 + ",ok"]}) == ["ok"]
+
+
 class TestValidatePattern:
     def test_accepts_reasonable_regex(self):
         assert validate_pattern("  error .*scheduler  ") == "error .*scheduler"
@@ -202,6 +255,48 @@ class TestDashboardService:
         second = service.anomalies(minutes=60)
         assert second["incidents"] == []
         assert second["ignored_count"] == 1
+
+    def test_container_filter_narrows_loki_query(self, tmp_path, monkeypatch):
+        import guiltyspark.dashboard as dashboard
+
+        seen_queries: list[str] = []
+
+        class FakeLoki:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def query_range(self, *args, **kwargs):
+                seen_queries.append(kwargs["query"])
+                return []
+
+        monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
+        service = DashboardService(_settings(tmp_path), [_target()])
+
+        unfiltered = service.anomalies(minutes=60)
+        filtered = service.anomalies(minutes=60, containers=["homebridge", "abraham"])
+
+        assert seen_queries[0] == '{job=~".+"}'
+        assert seen_queries[1] == '{job=~".+", container=~"homebridge|abraham"}'
+        assert unfiltered["containers"] == []
+        assert filtered["containers"] == ["homebridge", "abraham"]
+
+    def test_containers_lists_label_values(self, tmp_path, monkeypatch):
+        import guiltyspark.dashboard as dashboard
+
+        class FakeLoki:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def label_values(self, label, start_ns, end_ns):
+                assert label == "container"
+                return ["abraham", "homebridge"]
+
+        monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
+        service = DashboardService(_settings(tmp_path), [_target()])
+
+        result = service.containers(minutes=60)
+        assert result["label"] == "container"
+        assert result["containers"] == ["abraham", "homebridge"]
 
     def _fake_loki(self, monkeypatch, events):
         import guiltyspark.dashboard as dashboard

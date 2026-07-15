@@ -63,6 +63,7 @@ class Settings:
     dashboard_host: str = "0.0.0.0"
     dashboard_port: int = 8343
     dashboard_grouping: bool = False
+    dashboard_filter_label: str = "container"
     dedup_issues: bool = True
     issue_cooldown_seconds: int = 604800
     issue_active_window_seconds: int = 1209600
@@ -110,6 +111,10 @@ class Settings:
             dashboard_host=os.getenv("GUILTYSPARK_DASHBOARD_HOST", "0.0.0.0"),
             dashboard_port=_int("GUILTYSPARK_DASHBOARD_PORT", 8343),
             dashboard_grouping=_bool("GUILTYSPARK_DASHBOARD_GROUPING", False),
+            dashboard_filter_label=os.getenv(
+                "GUILTYSPARK_DASHBOARD_FILTER_LABEL", "container"
+            ).strip()
+            or "container",
             dedup_issues=_bool("GUILTYSPARK_DEDUP_ISSUES", True),
             issue_cooldown_seconds=_int("GUILTYSPARK_ISSUE_COOLDOWN_SECONDS", 604800),
             issue_active_window_seconds=_int(

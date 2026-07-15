@@ -17,6 +17,7 @@ import { PAGE_SIZE, PENDING_REFRESH_MS, REFRESH_MS } from "./lib/constants";
 
 export default function App() {
   const [windowMinutes, setWindowMinutes] = useState(60);
+  const [containerFilter, setContainerFilter] = useState<string[]>([]);
   const [findingsPage, setFindingsPage] = useState(0);
   const [measuresPage, setMeasuresPage] = useState(0);
   const [lastSurvey, setLastSurvey] = useState<Date | null>(null);
@@ -24,8 +25,13 @@ export default function App() {
 
   const overview = usePolling(() => api.overview(), REFRESH_MS, []);
   const anomalies = usePolling(
-    () => api.anomalies(windowMinutes),
+    () => api.anomalies(windowMinutes, containerFilter),
     (data) => (data?.groups_pending ? PENDING_REFRESH_MS : REFRESH_MS),
+    [windowMinutes, containerFilter],
+  );
+  const containers = usePolling(
+    () => api.containers(windowMinutes),
+    REFRESH_MS,
     [windowMinutes],
   );
   const findings = usePolling(
@@ -181,6 +187,9 @@ export default function App() {
           data={anomalies.data}
           windowMinutes={windowMinutes}
           onWindowChange={setWindowMinutes}
+          availableContainers={containers.data?.containers ?? []}
+          selectedContainers={containerFilter}
+          onContainersChange={setContainerFilter}
         />
         <UnassignedPanel
           unassigned={unassigned}
