@@ -75,6 +75,15 @@ jobs:
       - name: Build frontend
         run: npm run build --prefix frontend
 
+      # Portainer deploys this compose with no .env, so every variable must
+      # interpolate from the default written here. A malformed default does not
+      # fail anything else in this pipeline — tests pass, images publish, the
+      # release cuts — it just stops the stack redeploying, leaving the host on
+      # a stale image while CI stays green. `--env-file /dev/null` reproduces
+      # the deploy's empty environment rather than a developer's populated one.
+      - name: Validate deployment compose
+        run: docker compose --env-file /dev/null config --quiet
+
   release:
     name: Release and deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
