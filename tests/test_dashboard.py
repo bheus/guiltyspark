@@ -24,7 +24,7 @@ from guiltyspark.dashboard import (
     validate_pattern,
     with_label_filter,
 )
-from guiltyspark.models import LogEvent
+from guiltyspark.models import Incident, LogEvent
 from guiltyspark.state import StateStore
 from guiltyspark.targets import Target
 
@@ -36,7 +36,7 @@ def _wait_for_clustering(service, timeout: float = 5.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         with service._cluster_lock:
-            if service._cluster_pending is None:
+            if not service._cluster_running:
                 return
         time.sleep(0.01)
     raise AssertionError("clustering worker did not finish within timeout")
@@ -533,6 +533,89 @@ class TestDashboardService:
         result = service.anomalies(minutes=60)
         assert "groups" not in result
         assert len(result["incidents"]) == 2
+
+    def _incident(self, n: int) -> Incident:
+        return Incident(
+            fingerprint=f"fp{n}",
+            service="loki",
+            level="error",
+            first_seen_ns=n,
+            last_seen_ns=n,
+            count=1,
+            labels={"container": "loki"},
+            samples=[f"error {n}"],
+        )
+
+    def test_churning_anomaly_set_never_clusters_concurrently(
+        self, tmp_path, monkeypatch
+    ):
+        # A busy installation changes its anomaly set on most polls. Each change
+        # used to spawn its own worker, stacking one `codex exec` per poll on the
+        # host; only one may ever be in flight.
+        import guiltyspark.dashboard as dashboard
+        from guiltyspark.clustering import AnomalyGroup
+
+        entered = threading.Event()
+        release = threading.Event()
+        counter_lock = threading.Lock()
+        live = {"now": 0, "max": 0, "calls": 0}
+
+        def fake_cluster(settings, incidents):
+            with counter_lock:
+                live["now"] += 1
+                live["calls"] += 1
+                live["max"] = max(live["max"], live["now"])
+            entered.set()
+            assert release.wait(5), "test deadlock"
+            with counter_lock:
+                live["now"] -= 1
+            return [
+                AnomalyGroup(
+                    title="loki",
+                    summary="same class",
+                    fingerprints=[i.fingerprint for i in incidents],
+                )
+            ]
+
+        monkeypatch.setattr(dashboard, "cluster_incidents", fake_cluster)
+        service = DashboardService(
+            _settings(tmp_path, dashboard_grouping=True), [_target()]
+        )
+
+        service._cluster_cached([self._incident(0)])
+        assert entered.wait(5), "worker never started clustering"
+        # Ten further polls, each a different set, while Codex is still working.
+        for n in range(1, 11):
+            service._cluster_cached([self._incident(n)])
+        release.set()
+        _wait_for_clustering(service)
+
+        assert live["max"] == 1
+        # The churn collapses onto the newest set rather than clustering each:
+        # the in-flight pass, then one more for whatever landed meanwhile.
+        assert live["calls"] == 2
+        assert service._cluster_sig == ("fp10",)
+
+    def test_failed_clustering_retires_the_worker_for_a_later_retry(
+        self, tmp_path, monkeypatch
+    ):
+        # A Codex outage must not leave the worker flag stuck, or clustering
+        # would never be attempted again for the life of the process.
+        import guiltyspark.dashboard as dashboard
+
+        def boom(*_a, **_k):
+            raise RuntimeError("codex unavailable")
+
+        monkeypatch.setattr(dashboard, "cluster_incidents", boom)
+        service = DashboardService(
+            _settings(tmp_path, dashboard_grouping=True), [_target()]
+        )
+        service._cluster_cached([self._incident(0)])
+        _wait_for_clustering(service)
+
+        with service._cluster_lock:
+            assert service._cluster_running is False
+            assert service._cluster_wanted is None
 
     def test_rule_suppresses_matching_incidents_before_clustering(
         self, tmp_path, monkeypatch

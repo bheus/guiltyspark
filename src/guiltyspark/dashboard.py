@@ -252,9 +252,13 @@ class DashboardService:
         self._cluster_lock = threading.Lock()
         self._cluster_sig: tuple[str, ...] | None = None
         self._cluster_groups: list[AnomalyGroup] = []
-        # Signature currently being clustered off-thread, so a burst of polls
-        # spawns at most one worker per distinct anomaly set.
-        self._cluster_pending: tuple[str, ...] | None = None
+        # The newest anomaly set awaiting clustering, and whether a worker is
+        # already alive to take it. One worker at a time: a set that keeps
+        # changing hands its latest state to the worker in flight rather than
+        # starting a rival, so `codex exec` never runs concurrently with itself.
+        self._cluster_wanted: tuple[str, ...] | None = None
+        self._cluster_wanted_incidents: list[Incident] = []
+        self._cluster_running = False
         # Resolves each opened PR's live disposition (merged/closed/open); its own
         # TTL cache keeps the auto-refresh from hammering the GitHub API.
         self._pr_status = PrStatusClient(settings)
@@ -598,33 +602,52 @@ class DashboardService:
         with self._cluster_lock:
             if signature == self._cluster_sig:
                 return self._cluster_groups
-            if signature != self._cluster_pending:
-                self._cluster_pending = signature
-                worker = threading.Thread(
-                    target=self._cluster_worker,
-                    args=(signature, list(incidents)),
-                    daemon=True,
-                )
-                worker.start()
-            return None
+            # Record the newest request and let any live worker collect it. On a
+            # busy installation the anomaly set changes most polls, so spawning
+            # per change would stack a Codex subprocess per poll on the host.
+            self._cluster_wanted = signature
+            self._cluster_wanted_incidents = list(incidents)
+            if self._cluster_running:
+                return None
+            self._cluster_running = True
+        threading.Thread(target=self._cluster_worker, daemon=True).start()
+        return None
 
-    def _cluster_worker(
-        self, signature: tuple[str, ...], incidents: list[Incident]
-    ) -> None:
-        """Cluster off the request path and publish the result under its
-        signature. Failures clear the pending marker so a later poll retries."""
-        try:
-            groups = cluster_incidents(self.settings, incidents)
-        except Exception:
+    def _cluster_worker(self) -> None:
+        """Cluster off the request path until the newest request is satisfied.
+
+        Loops rather than exiting after one pass: a set that changed while Codex
+        was working is served on the next lap by this same worker, which is what
+        keeps the count of live `codex exec` processes at one however fast polls
+        arrive. Failures drop the attempt so a later poll can retry."""
+        while True:
             with self._cluster_lock:
-                if self._cluster_pending == signature:
-                    self._cluster_pending = None
-            return
-        with self._cluster_lock:
-            self._cluster_sig = signature
-            self._cluster_groups = groups
-            if self._cluster_pending == signature:
-                self._cluster_pending = None
+                signature = self._cluster_wanted
+                incidents = self._cluster_wanted_incidents
+                if signature is None or signature == self._cluster_sig:
+                    self._clear_cluster_request()
+                    return
+            try:
+                groups = cluster_incidents(self.settings, incidents)
+            except Exception:
+                # Drop the attempt rather than retry in-loop: a Codex outage
+                # would otherwise spin here. The next poll re-requests.
+                with self._cluster_lock:
+                    self._clear_cluster_request()
+                return
+            with self._cluster_lock:
+                self._cluster_sig = signature
+                self._cluster_groups = groups
+                if self._cluster_wanted == signature:
+                    self._clear_cluster_request()
+                    return
+                # A newer set landed mid-flight; take it on the next lap.
+
+    def _clear_cluster_request(self) -> None:
+        """Retire the worker. Caller must hold `_cluster_lock`."""
+        self._cluster_wanted = None
+        self._cluster_wanted_incidents = []
+        self._cluster_running = False
 
     def _bucket_for(self, labels: dict[str, str]) -> str:
         selectors = [
