@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import urllib.request
 from importlib import resources
@@ -10,8 +11,12 @@ import pytest
 
 from guiltyspark.config import Settings
 from guiltyspark.dashboard import (
+    ANOMALY_LEVELS,
+    ANOMALY_LINE_PATTERN,
     DashboardService,
     _containers_param,
+    _merge_events,
+    anomaly_queries,
     make_server,
     parse_stream_selector,
     selector_matches,
@@ -146,6 +151,82 @@ class TestWithLabelFilter:
         )
 
 
+class TestAnomalyQueries:
+    def test_covers_both_line_and_label_severity_rules(self):
+        queries = anomaly_queries('{job=~".+"}')
+        assert queries == [
+            '{job=~".+"} |~ "(?i)(panic|fatal|error|exception|traceback)" '
+            '!~ "(?i)(^|\\\\s)(level|severity|lvl)=\\"?(trace|debug|info|warn|warning)\\\\b"',
+            '{job=~".+", level=~"(?i)^(error|fatal)$"}',
+            '{job=~".+", severity=~"(?i)^(error|fatal)$"}',
+        ]
+
+    def test_keyword_query_excludes_lines_declaring_a_benign_level(self):
+        # Without this, Loki's own info-level log of the query below matches the
+        # query's keywords, so polling the dashboard manufactures anomalies.
+        keyword_query = anomaly_queries('{job=~".+"}')[0]
+        assert '!~ "(?i)(^|\\\\s)(level|severity|lvl)=' in keyword_query
+
+    def test_a_served_query_log_is_not_an_anomaly(self):
+        # End to end over the loop's actual shape: Loki logs the query text at
+        # info; LogEvent.level must not read the echoed keywords as an anomaly.
+        served = (
+            'level=info ts=2026-07-15T15:32:09Z caller=metrics.go:159 '
+            f'query="{anomaly_queries(chr(123) + chr(125))[0]}"'
+        )
+        assert LogEvent(ts_ns=1, labels={}, line=served).level not in ANOMALY_LEVELS
+
+    def test_container_filter_survives_into_every_variant(self):
+        base = with_label_filter('{job=~".+"}', "container", ["abraham"])
+        assert all('container=~"abraham"' in query for query in anomaly_queries(base))
+
+    def test_matches_what_log_event_level_calls_an_anomaly(self):
+        # The line-pattern query must match every line LogEvent.level would call
+        # error/fatal on the basis of its text alone.
+        pattern = re.compile(ANOMALY_LINE_PATTERN)
+        for line in [
+            "kernel panic",
+            "FATAL: out of memory",
+            "Error: connection refused",
+            "unhandled exception",
+            "Traceback (most recent call last):",
+        ]:
+            assert LogEvent(ts_ns=1, labels={}, line=line).level in {"error", "fatal"}
+            assert pattern.search(line), line
+
+    def test_does_not_prefilter_away_non_anomalies_only(self):
+        # An "info" line is allowed to be fetched, but must not be a false
+        # negative for anything LogEvent.level rates as an anomaly.
+        assert LogEvent(ts_ns=1, labels={}, line="request served").level == "info"
+        assert not re.compile(ANOMALY_LINE_PATTERN).search("request served")
+
+
+class TestMergeEvents:
+    def _event(self, ts, line="error boom", **labels):
+        return LogEvent(ts_ns=ts, labels=labels or {"container": "a"}, line=line)
+
+    def test_overlapping_queries_do_not_double_count(self):
+        event = self._event(1)
+        merged = _merge_events([[event], [event], []])
+        assert len(merged) == 1
+
+    def test_genuine_repeats_of_a_line_are_kept(self):
+        # The same line twice at the same instant is real volume, not overlap.
+        page = [self._event(1), self._event(1)]
+        merged = _merge_events([page, [self._event(1)]])
+        assert len(merged) == 2
+
+    def test_union_keeps_lines_only_one_query_found(self):
+        by_line = self._event(1, line="error boom")
+        by_label = self._event(2, line="connection refused", level="error")
+        merged = _merge_events([[by_line], [by_label]])
+        assert [event.line for event in merged] == ["error boom", "connection refused"]
+
+    def test_result_is_ordered_by_timestamp(self):
+        merged = _merge_events([[self._event(30)], [self._event(10), self._event(20)]])
+        assert [event.ts_ns for event in merged] == [10, 20, 30]
+
+
 class TestContainersParam:
     def test_comma_separated_and_repeated(self):
         assert _containers_param({"container": ["a,b", "c"]}) == ["a", "b", "c"]
@@ -240,8 +321,11 @@ class TestDashboardService:
             def __init__(self, *args, **kwargs):
                 pass
 
-            def query_range(self, *args, **kwargs):
-                return events
+            def query_window(self, *args, **kwargs):
+                return events, False
+
+            def count_over_window(self, *args, **kwargs):
+                return len(events)
 
         monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
         service = DashboardService(_settings(tmp_path), [_target()])
@@ -265,18 +349,34 @@ class TestDashboardService:
             def __init__(self, *args, **kwargs):
                 pass
 
-            def query_range(self, *args, **kwargs):
+            def query_window(self, *args, **kwargs):
                 seen_queries.append(kwargs["query"])
-                return []
+                return [], False
 
+            def count_over_window(self, query, *args, **kwargs):
+                seen_counts.append(query)
+                return 0
+
+        seen_counts: list[str] = []
         monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
         service = DashboardService(_settings(tmp_path), [_target()])
 
         unfiltered = service.anomalies(minutes=60)
+        unfiltered_queries = list(seen_queries)
+        seen_queries.clear()
         filtered = service.anomalies(minutes=60, containers=["homebridge", "abraham"])
 
-        assert seen_queries[0] == '{job=~".+"}'
-        assert seen_queries[1] == '{job=~".+", container=~"homebridge|abraham"}'
+        # Every severity variant carries the container matcher, so the filter is
+        # applied by Loki rather than after the fact.
+        assert all('job=~".+"' in query for query in unfiltered_queries)
+        assert all(
+            'container=~"homebridge|abraham"' in query for query in seen_queries
+        )
+        # The denominator is counted over the unfiltered-by-severity selector.
+        assert seen_counts == [
+            '{job=~".+"}',
+            '{job=~".+", container=~"homebridge|abraham"}',
+        ]
         assert unfiltered["containers"] == []
         assert filtered["containers"] == ["homebridge", "abraham"]
 
@@ -305,8 +405,11 @@ class TestDashboardService:
             def __init__(self, *args, **kwargs):
                 pass
 
-            def query_range(self, *args, **kwargs):
-                return events
+            def query_window(self, *args, **kwargs):
+                return events, False
+
+            def count_over_window(self, *args, **kwargs):
+                return len(events)
 
         monkeypatch.setattr(dashboard, "LokiClient", FakeLoki)
 

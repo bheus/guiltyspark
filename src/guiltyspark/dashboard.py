@@ -35,6 +35,15 @@ from guiltyspark.targets import (
 )
 
 ANOMALY_LEVELS = {"error", "fatal"}
+# Server-side prefilters mirroring LogEvent.level's two severity rules. They
+# over-match on purpose (LogEvent.level still has the final say) — missing a
+# real anomaly is far worse than fetching a line we then discard.
+ANOMALY_LINE_PATTERN = "(?i)(panic|fatal|error|exception|traceback)"
+# Lines that declare a non-anomaly level in logfmt: LogEvent.level believes the
+# declaration over any keyword in the text, so there is no point fetching them.
+_DECLARED_NON_ANOMALY_PATTERN = "(?i)(^|\\s)(level|severity|lvl)=\"?(trace|debug|info|warn|warning)\\b"
+_ANOMALY_LEVEL_PATTERN = "(?i)^(error|fatal)$"
+_SEVERITY_LABELS = ("level", "severity")
 TIMELINE_BINS = 60
 # Highest (most severe) first, for picking a group's headline level.
 _SEVERITY_ORDER = ("fatal", "error", "warning", "info")
@@ -139,14 +148,64 @@ def with_label_filter(query: str, label: str, values: list[str]) -> str:
     (fail open, like parse_stream_selector)."""
     if not values:
         return query
+    pattern = "|".join(re.escape(value) for value in values)
+    return _with_matcher(query, f"{label}=~{json.dumps(pattern)}")
+
+
+def _with_matcher(query: str, matcher: str) -> str:
+    """Add a matcher to the first `{...}` stream selector, or return the query
+    unchanged if there is no selector to extend (fail open)."""
     start = query.find("{")
     end = query.find("}", start)
     if start == -1 or end == -1:
         return query
-    pattern = "|".join(re.escape(value) for value in values)
-    matcher = f"{label}=~{json.dumps(pattern)}"
     separator = ", " if query[start + 1 : end].strip() else ""
     return query[:end] + separator + matcher + query[end:]
+
+
+def anomaly_queries(query: str) -> list[str]:
+    """LogQL variants that together match a superset of what `LogEvent.level`
+    calls error/fatal, so severity filtering happens in Loki instead of over a
+    full download of the window.
+
+    `LogEvent.level` reads a severity label first and falls back to scanning the
+    line, and neither test implies the other: a line labelled `level=error` need
+    not contain the word, and a line containing it may be labelled otherwise.
+    So each rule gets its own query and the results are unioned; the caller
+    still applies `LogEvent.level` to reject the extra lines this over-fetches.
+    """
+    # The exclusion keeps the keyword query honest about self-inflicted noise:
+    # Loki logs each query it serves at info, echoing this very pattern back
+    # into the logs, where the keywords would otherwise match themselves.
+    queries = [
+        f"{query} |~ {json.dumps(ANOMALY_LINE_PATTERN)} "
+        f"!~ {json.dumps(_DECLARED_NON_ANOMALY_PATTERN)}"
+    ]
+    for label in _SEVERITY_LABELS:
+        queries.append(_with_matcher(query, f"{label}=~{json.dumps(_ANOMALY_LEVEL_PATTERN)}"))
+    return queries
+
+
+def _merge_events(pages: list[list[LogEvent]]) -> list[LogEvent]:
+    """Union overlapping result sets, keeping repeated identical lines.
+
+    The severity queries overlap by design, so the same line usually arrives
+    more than once. Deduplicating outright would erase genuine repeats of an
+    identical line at the same instant, so each distinct line keeps the highest
+    number of copies any single query saw.
+    """
+    best: dict[tuple, list[LogEvent]] = {}
+    for page in pages:
+        counts: dict[tuple, list[LogEvent]] = {}
+        for event in page:
+            key = (event.ts_ns, event.line, tuple(sorted(event.labels.items())))
+            counts.setdefault(key, []).append(event)
+        for key, events in counts.items():
+            if len(events) > len(best.get(key, [])):
+                best[key] = events
+    merged = [event for events in best.values() for event in events]
+    merged.sort(key=lambda event: event.ts_ns)
+    return merged
 
 
 def selector_matches(matchers: list[LabelMatcher], labels: dict[str, str]) -> bool:
@@ -407,17 +466,29 @@ class DashboardService:
             bearer_token=self.settings.loki_bearer_token,
             basic_auth=self.settings.loki_basic_auth,
         )
-        events = client.query_range(
-            query=with_label_filter(
-                self.settings.loki_query,
-                self.settings.dashboard_filter_label,
-                containers,
-            ),
-            start_ns=start_ns,
-            end_ns=end_ns,
-            limit=self.settings.loki_limit,
+        base_query = with_label_filter(
+            self.settings.loki_query,
+            self.settings.dashboard_filter_label,
+            containers,
         )
-        errors = [event for event in events if event.level in ANOMALY_LEVELS]
+        # Severity is filtered in Loki and the denominator comes from a metric
+        # query, so cost tracks the anomalies found rather than the window's
+        # total volume — which runs to hundreds of thousands of lines at 24h.
+        pages: list[list[LogEvent]] = []
+        truncated = False
+        for query in anomaly_queries(base_query):
+            page, page_truncated = client.query_window(
+                query=query,
+                start_ns=start_ns,
+                end_ns=end_ns,
+                page_limit=self.settings.loki_limit,
+                max_events=self.settings.dashboard_max_events,
+            )
+            pages.append(page)
+            truncated = truncated or page_truncated
+        candidates = _merge_events(pages)
+        errors = [event for event in candidates if event.level in ANOMALY_LEVELS]
+        total_events = client.count_over_window(base_query, start_ns, end_ns)
         incidents = group_incidents(errors, min_events=1)
         selectors = [
             (target.id, parse_stream_selector(target.loki_query))
@@ -446,8 +517,8 @@ class DashboardService:
             "generated_at": _now_iso(),
             "window_minutes": minutes,
             "containers": containers,
-            "total_events": len(events),
-            "truncated": len(events) >= self.settings.loki_limit,
+            "total_events": total_events,
+            "truncated": truncated,
             "error_events": len(errors),
             "ignored_count": ignored_count,
             "incidents": payload,
