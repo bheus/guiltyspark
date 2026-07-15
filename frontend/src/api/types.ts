@@ -31,6 +31,7 @@ export interface TimelineBin {
 export interface AnomaliesResponse {
   generated_at: string;
   window_minutes: number;
+  containers: string[];
   total_events: number;
   truncated: boolean;
   error_events: number;
@@ -39,6 +40,12 @@ export interface AnomaliesResponse {
   timeline: TimelineBin[];
   groups?: AnomalyGroup[];
   groups_pending?: boolean;
+}
+
+export interface ContainersResponse {
+  generated_at: string;
+  label: string;
+  containers: string[];
 }
 
 export interface OverviewTarget {

@@ -4,6 +4,7 @@
 
 import type {
   AnomaliesResponse,
+  ContainersResponse,
   FindingsResponse,
   IgnorePayload,
   IgnoredResponse,
@@ -45,8 +46,15 @@ async function sendJSON<T>(
 
 export const api = {
   overview: () => getJSON<OverviewResponse>("/api/overview"),
-  anomalies: (minutes: number) =>
-    getJSON<AnomaliesResponse>(`/api/anomalies?minutes=${minutes}`),
+  anomalies: (minutes: number, containers: string[] = []) =>
+    getJSON<AnomaliesResponse>(
+      `/api/anomalies?minutes=${minutes}` +
+        (containers.length
+          ? `&container=${encodeURIComponent(containers.join(","))}`
+          : ""),
+    ),
+  containers: (minutes: number) =>
+    getJSON<ContainersResponse>(`/api/containers?minutes=${minutes}`),
   ignored: () => getJSON<IgnoredResponse>("/api/anomalies/ignored"),
   findings: (limit: number, offset: number) =>
     getJSON<FindingsResponse>(`/api/findings?limit=${limit}&offset=${offset}`),

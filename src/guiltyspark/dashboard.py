@@ -132,6 +132,23 @@ def parse_stream_selector(query: str) -> list[LabelMatcher]:
     return matchers
 
 
+def with_label_filter(query: str, label: str, values: list[str]) -> str:
+    """Inject `label=~"a|b"` into the first `{...}` stream selector of a LogQL
+    query. Values are regex-escaped, so each one matches literally. Returns the
+    query unchanged when there is nothing to filter or no selector is found
+    (fail open, like parse_stream_selector)."""
+    if not values:
+        return query
+    start = query.find("{")
+    end = query.find("}", start)
+    if start == -1 or end == -1:
+        return query
+    pattern = "|".join(re.escape(value) for value in values)
+    matcher = f"{label}=~{json.dumps(pattern)}"
+    separator = ", " if query[start + 1 : end].strip() else ""
+    return query[:end] + separator + matcher + query[end:]
+
+
 def selector_matches(matchers: list[LabelMatcher], labels: dict[str, str]) -> bool:
     return bool(matchers) and all(matcher.matches(labels) for matcher in matchers)
 
@@ -381,7 +398,8 @@ class DashboardService:
             "offset": offset,
         }
 
-    def anomalies(self, minutes: int = 60) -> dict:
+    def anomalies(self, minutes: int = 60, containers: list[str] | None = None) -> dict:
+        containers = containers or []
         end_ns = time.time_ns()
         start_ns = end_ns - minutes * 60 * 1_000_000_000
         client = LokiClient(
@@ -390,7 +408,11 @@ class DashboardService:
             basic_auth=self.settings.loki_basic_auth,
         )
         events = client.query_range(
-            query=self.settings.loki_query,
+            query=with_label_filter(
+                self.settings.loki_query,
+                self.settings.dashboard_filter_label,
+                containers,
+            ),
             start_ns=start_ns,
             end_ns=end_ns,
             limit=self.settings.loki_limit,
@@ -423,6 +445,7 @@ class DashboardService:
         response = {
             "generated_at": _now_iso(),
             "window_minutes": minutes,
+            "containers": containers,
             "total_events": len(events),
             "truncated": len(events) >= self.settings.loki_limit,
             "error_events": len(errors),
@@ -439,6 +462,26 @@ class DashboardService:
             # UI so it can show a "cataloging" state over the flat fallback list.
             response["groups_pending"] = True
         return response
+
+    def containers(self, minutes: int = 60) -> dict:
+        """Values of the filter label (default `container`) seen in the window,
+        from Loki's label-values API — so containers crowded out of the capped
+        event sample still appear in the picker."""
+        end_ns = time.time_ns()
+        start_ns = end_ns - minutes * 60 * 1_000_000_000
+        client = LokiClient(
+            base_url=self.settings.loki_url,
+            bearer_token=self.settings.loki_bearer_token,
+            basic_auth=self.settings.loki_basic_auth,
+        )
+        values = client.label_values(
+            self.settings.dashboard_filter_label, start_ns, end_ns
+        )
+        return {
+            "generated_at": _now_iso(),
+            "label": self.settings.dashboard_filter_label,
+            "containers": values,
+        }
 
     def _grouped_unassigned(
         self, incidents: list[Incident], entry_by_fp: dict[str, dict]
@@ -591,7 +634,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 )
             elif parsed.path == "/api/anomalies":
                 self._send_json(
-                    self.service.anomalies(_bounded(query, "minutes", 60, 1440))
+                    self.service.anomalies(
+                        _bounded(query, "minutes", 60, 1440),
+                        _containers_param(query),
+                    )
+                )
+            elif parsed.path == "/api/containers":
+                self._send_json(
+                    self.service.containers(_bounded(query, "minutes", 60, 1440))
                 )
             elif parsed.path == "/api/anomalies/ignored":
                 self._send_json(self.service.ignored_anomalies())
@@ -757,6 +807,28 @@ def _bounded(query: dict[str, list[str]], key: str, default: int, maximum: int) 
     except ValueError:
         return default
     return max(1, min(value, maximum))
+
+
+_MAX_CONTAINER_FILTERS = 50
+_MAX_CONTAINER_VALUE_LEN = 200
+
+
+def _containers_param(query: dict[str, list[str]]) -> list[str]:
+    """Container filter values from repeated and/or comma-separated `container`
+    params, deduplicated in order; oversized values and excess entries drop."""
+    values: list[str] = []
+    for raw in query.get("container", []):
+        for part in raw.split(","):
+            part = part.strip()
+            if (
+                part
+                and len(part) <= _MAX_CONTAINER_VALUE_LEN
+                and part not in values
+            ):
+                values.append(part)
+                if len(values) >= _MAX_CONTAINER_FILTERS:
+                    return values
+    return values
 
 
 def _offset(query: dict[str, list[str]]) -> int:
