@@ -35,6 +35,7 @@ GUILTYSPARK_SITE_IMAGE=guiltyspark-site:local docker compose up -d guiltyspark-s
 ## SEO
 
 - Full HTML is served on first byte (no JS needed to index) — equivalent to SSR for crawlers.
-- <title>, meta description, canonical, Open Graph, Twitter card, and JSON-LD SoftwareApplication schema are in index.html.
+- The title, meta description, canonical, Open Graph, and Twitter card target the page's core AI-native observability intent.
+- JSON-LD in index.html describes the site with a `WebSite`, `SoftwareApplication`, and visible `FAQPage` in one `@graph`. Keep the software features and FAQ answers synchronized with the page copy.
 - robots.txt and sitemap.xml reference https://guiltyspark.builtbybrendan.com. Update all three if the domain changes.
 - After DNS is live, submit the sitemap in Google Search Console.
