@@ -11,9 +11,13 @@ export interface Polling<T> {
 // flickers to empty on the 60s tick — components stay mounted and keep their
 // local state (open cards, in-progress edits). This is the core of the
 // state-preserving render model that replaced innerHTML wholesale-replacement.
+//
+// `intervalMs` may be a function of the latest data, letting a caller poll
+// faster while the server reports work in flight. Changing the interval only
+// reschedules the timer; it never triggers an extra fetch.
 export function usePolling<T>(
   fetcher: () => Promise<T>,
-  intervalMs: number,
+  intervalMs: number | ((data: T | null) => number),
   deps: unknown[] = [],
 ): Polling<T> {
   const [data, setData] = useState<T | null>(null);
@@ -33,14 +37,23 @@ export function usePolling<T>(
     }
   }, []);
 
+  const delay = typeof intervalMs === "function" ? intervalMs(data) : intervalMs;
+
+  // Fetch on mount and whenever the query itself changes.
   useEffect(() => {
     refetch().catch(() => {});
-    const id = window.setInterval(() => {
-      refetch().catch(() => {});
-    }, intervalMs);
-    return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
+
+  // Keep the timer separate so a change of `delay` reschedules without
+  // refetching — otherwise every interval change would burn an extra request.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      refetch().catch(() => {});
+    }, delay);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [delay, ...deps]);
 
   return { data, error, refetch };
 }
