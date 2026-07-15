@@ -13,6 +13,33 @@ NOISE_WORDS = re.compile(
     re.IGNORECASE,
 )
 WHITESPACE = re.compile(r"\s+")
+# A logfmt `level=`/`severity=` field a logger wrote about itself. Trusted over
+# the keyword scan below, which cannot tell a line reporting an error from one
+# merely containing the word — an info line that quotes an error string (Loki
+# logging the text of a query, say) is not an anomaly.
+LOGFMT_LEVEL = re.compile(
+    r"(?:^|\s)(?:level|severity|lvl)=\"?(trace|debug|info|warn|warning|error|fatal|panic|critical)\b",
+    re.IGNORECASE,
+)
+
+
+# Synonyms a logger may use for the four levels the rest of the system knows
+# about. Anything unrecognised is passed through as-is rather than guessed at.
+_LEVEL_SYNONYMS = {
+    "trace": "info",
+    "debug": "info",
+    "warn": "warning",
+    "err": "error",
+    "critical": "error",
+    "crit": "error",
+    "panic": "fatal",
+    "emergency": "fatal",
+}
+
+
+def _normalize_level(value: str) -> str:
+    lowered = value.strip().lower()
+    return _LEVEL_SYNONYMS.get(lowered, lowered)
 
 
 @dataclass(frozen=True)
@@ -37,7 +64,10 @@ class LogEvent:
     def level(self) -> str:
         explicit = self.labels.get("level") or self.labels.get("severity")
         if explicit:
-            return explicit.lower()
+            return _normalize_level(explicit)
+        declared = LOGFMT_LEVEL.search(self.line)
+        if declared:
+            return _normalize_level(declared.group(1))
         lowered = self.line.lower()
         if "panic" in lowered or "fatal" in lowered:
             return "fatal"
