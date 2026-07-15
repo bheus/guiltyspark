@@ -124,6 +124,25 @@ class RemediationTests(unittest.TestCase):
             self.assertIn("workspace-write", command)
             self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
 
+    def test_code_fix_uses_remediation_model(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
+        incident, finding = load_replay_case(fixture)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_settings = replace(
+                settings(root),
+                model="legacy-model",
+                analysis_model="analysis-model",
+                remediation_model="gpt-5.6-luna",
+            )
+            remediator = Remediator(app_settings)
+            with patch.object(remediator, "_run") as run:
+                remediator._run_codex(root, target(), incident, finding)
+
+        command = run.call_args.args[0]
+        model_flag = command.index("--model")
+        self.assertEqual(command[model_flag + 1], "gpt-5.6-luna")
+
     def test_git_environment_receives_token_but_not_app_private_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             remediator = Remediator(settings(Path(tmp)))
@@ -186,6 +205,30 @@ class RemediationTests(unittest.TestCase):
             codex_env = run.call_args.kwargs["env"]
             for name in secrets:
                 self.assertNotIn(name, codex_env)
+
+    def test_diagnosis_uses_analysis_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_settings = replace(
+                settings(root),
+                model="legacy-model",
+                analysis_model="analysis-model",
+                remediation_model="gpt-5.6-luna",
+            )
+
+            def complete_codex(command, **kwargs):
+                output_flag = command.index("--output-last-message")
+                Path(command[output_flag + 1]).write_text(
+                    '{"findings": []}', encoding="utf-8"
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with patch("subprocess.run", side_effect=complete_codex) as run:
+                self.assertEqual(_run_codex(app_settings, "prompt"), [])
+
+        command = run.call_args.args[0]
+        model_flag = command.index("--model")
+        self.assertEqual(command[model_flag + 1], "analysis-model")
 
     def test_draft_pr_creation_uses_draft_and_redacts_secrets(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"

@@ -103,7 +103,9 @@ All settings are environment variables. The most important ones are:
 | `RESEND_API_KEY` | Resend API key. Enables an email when guiltyspark opens a PR (only fires for its own PRs, never your manual ones). |
 | `GUILTYSPARK_NOTIFY_EMAIL_FROM` | Verified Resend sender address for PR-opened emails. |
 | `GUILTYSPARK_NOTIFY_EMAIL_TO` | Recipient address for PR-opened emails. |
-| `GUILTYSPARK_MODEL` | Model passed to `codex exec --model`. Unset uses the Codex CLI default. |
+| `GUILTYSPARK_MODEL` | Backward-compatible default model for every `codex exec` call. The use-specific settings below take precedence. Unset uses the Codex CLI default. |
+| `GUILTYSPARK_ANALYSIS_MODEL` | Model for diagnosis, anomaly clustering, issue deduplication, and planning. Falls back to `GUILTYSPARK_MODEL`, then the Codex CLI default. |
+| `GUILTYSPARK_REMEDIATION_MODEL` | Model for repository-writing code fixes. Falls back to `GUILTYSPARK_MODEL`, then the Codex CLI default. The Docker Compose scaffold defaults this to `gpt-5.6-luna`. |
 | `GUILTYSPARK_CODEX_PATH` | Codex CLI binary. Defaults to `codex`. |
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
 | `GUILTYSPARK_CODEX_TIMEOUT_SECONDS` | Timeout for a single Codex invocation. Defaults to `600`. |

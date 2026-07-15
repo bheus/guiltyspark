@@ -79,6 +79,18 @@ class Settings:
     github_app_private_key_file: Path | None = None
     loki_bearer_token: str | None = None
     loki_basic_auth: str | None = None
+    analysis_model: str | None = None
+    remediation_model: str | None = None
+
+    @property
+    def analysis_model_name(self) -> str | None:
+        """Model for diagnosis, clustering, and other reasoning calls."""
+        return self.analysis_model or self.model
+
+    @property
+    def remediation_model_name(self) -> str | None:
+        """Model for repository-writing code-fix calls."""
+        return self.remediation_model or self.model
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -144,4 +156,6 @@ class Settings:
             ),
             loki_bearer_token=os.getenv("LOKI_BEARER_TOKEN") or None,
             loki_basic_auth=os.getenv("LOKI_BASIC_AUTH") or None,
+            analysis_model=os.getenv("GUILTYSPARK_ANALYSIS_MODEL") or None,
+            remediation_model=os.getenv("GUILTYSPARK_REMEDIATION_MODEL") or None,
         )

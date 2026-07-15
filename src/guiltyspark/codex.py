@@ -49,8 +49,8 @@ def codex_exec(settings: Settings, prompt: str) -> str:
         "--output-last-message",
         str(output_path),
     ]
-    if settings.model:
-        command.extend(["--model", settings.model])
+    if settings.analysis_model_name:
+        command.extend(["--model", settings.analysis_model_name])
     command.append("-")
 
     env = os.environ.copy()

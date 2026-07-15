@@ -170,8 +170,8 @@ class Remediator:
             "workspace-write",
             "--skip-git-repo-check",
         ]
-        if self.settings.model:
-            command.extend(["--model", self.settings.model])
+        if self.settings.remediation_model_name:
+            command.extend(["--model", self.settings.remediation_model_name])
         command.append("-")
         env = self._worker_env()
         env["CODEX_HOME"] = str(self.settings.codex_home.resolve())
