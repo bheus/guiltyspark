@@ -1,6 +1,6 @@
 [project]
 name = "guiltyspark"
-version = "0.22.4"
+version = "0.22.5"
 description = "Agentic Loki log monitor and remediation worker for application fleets."
 readme = "README.md"
 license = "Apache-2.0"
