@@ -11,16 +11,21 @@ python3 -m http.server -d site 8080
 
 ## Docker Compose
 
-The repository's Compose stack runs this directory in the `guiltyspark-site` nginx
-service. It publishes port `8080` by default:
+The repository's main-branch workflow packages this directory as the
+`ghcr.io/bheus/guiltyspark-site:latest` nginx image. The Compose stack runs that
+image as the `guiltyspark-site` service and publishes port `8080` by default:
 
 ```bash
 docker compose up -d guiltyspark-site
 ```
 
 Open `http://localhost:8080`, or set `GUILTYSPARK_SITE_PORT` to choose another host
-port. Files are mounted read-only into nginx, so site edits are visible without
-rebuilding an image.
+port. For a local image build, run:
+
+```bash
+docker build -t guiltyspark-site:local site
+GUILTYSPARK_SITE_IMAGE=guiltyspark-site:local docker compose up -d guiltyspark-site
+```
 
 ## Other deploy options
 

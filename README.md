@@ -115,6 +115,7 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_GITHUB_API_URL` | GitHub API base URL, for GitHub Enterprise. Defaults to `https://api.github.com`. |
 | `GUILTYSPARK_DASHBOARD_HOST` | Bind address for `guiltyspark dashboard`. Defaults to `0.0.0.0`. |
 | `GUILTYSPARK_DASHBOARD_PORT` | Port for the web dashboard. Defaults to `8343`. |
+| `GUILTYSPARK_SITE_IMAGE` | Marketing-site image. Defaults to `ghcr.io/bheus/guiltyspark-site:latest`. |
 | `GUILTYSPARK_SITE_PORT` | Host port for the nginx marketing-site container. Defaults to `8080`. |
 | `GUILTYSPARK_DASHBOARD_GROUPING` | When enabled, the dashboard asks Codex to cluster related unassigned anomalies into a single semantic group so an operator can silence a whole class at once, and to propose a **silence pattern** (a service-scoped regex) that suppresses current *and future* variants. Patterns are always operator-reviewed before they take effect — the UI shows the proposal and its live blast radius; nothing is auto-applied. Costs a Codex call when a new anomaly class appears (clustering is cached against the unassigned fingerprint set; count-only changes reuse it) and one per pattern proposal. Requires the `codex` binary. Falls back to the flat list on any Codex error. Defaults to `false`. |
 | `GUILTYSPARK_DASHBOARD_FILTER_LABEL` | Loki label the dashboard's container selector filters on. The picker lists this label's values for the current window and narrows the anomaly survey server-side, so the `LOKI_LIMIT` budget is spent only on the selected containers. Defaults to `container`. |
@@ -202,9 +203,11 @@ draft-PR exercise.
 
 ## Deployment
 
-The Compose stack also serves the static marketing site from `site/` through an nginx
-sidecar at `http://localhost:8080`. Set `GUILTYSPARK_SITE_PORT` to publish it on a
-different host port. The dashboard remains available separately on port `8343`.
+The Compose stack also serves the static marketing site through an nginx sidecar at
+`http://localhost:8080`. Set `GUILTYSPARK_SITE_PORT` to publish it on a different
+host port. The dashboard remains available separately on port `8343`. Main-branch
+pushes publish `site/` as `ghcr.io/bheus/guiltyspark-site:latest` before triggering
+the Portainer redeploy webhook, so the stack does not depend on repository bind mounts.
 
 Push conventional commits to `main`. GitHub Actions tests the project, creates a semantic
 release, builds a native `linux/arm64` image, publishes versioned and `latest` tags to GHCR,
