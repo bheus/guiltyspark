@@ -447,6 +447,13 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 
 .incident-list, .record-list { display: flex; flex-direction: column; gap: 10px; }
 
+/* Anomalies from the previous survey, held on screen while the next one runs so
+   the panel does not blank on every window change. Receded, not hidden. */
+.incident-list.stale { opacity: 0.4; transition: opacity 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .incident-list.stale { transition: none; }
+}
+
 .incident, .record {
   background: var(--hull-2);
   border: 1px solid var(--seam-dim);

@@ -198,6 +198,7 @@ export default function App() {
         />
         <UnassignedPanel
           unassigned={unassigned}
+          stale={anomalies.loading}
           groups={anomalies.data?.groups}
           groupsPending={anomalies.data?.groups_pending}
           error={anomalies.error?.message}
