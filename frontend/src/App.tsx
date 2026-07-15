@@ -13,7 +13,7 @@ import { Tiles } from "./components/Tiles";
 import { UnassignedPanel } from "./components/UnassignedPanel";
 import { usePolling } from "./hooks/usePolling";
 import { ignorePayload } from "./lib/anomalies";
-import { PAGE_SIZE, REFRESH_MS } from "./lib/constants";
+import { PAGE_SIZE, PENDING_REFRESH_MS, REFRESH_MS } from "./lib/constants";
 
 export default function App() {
   const [windowMinutes, setWindowMinutes] = useState(60);
@@ -25,7 +25,7 @@ export default function App() {
   const overview = usePolling(() => api.overview(), REFRESH_MS, []);
   const anomalies = usePolling(
     () => api.anomalies(windowMinutes),
-    REFRESH_MS,
+    (data) => (data?.groups_pending ? PENDING_REFRESH_MS : REFRESH_MS),
     [windowMinutes],
   );
   const findings = usePolling(
