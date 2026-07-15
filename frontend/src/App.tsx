@@ -178,13 +178,18 @@ export default function App() {
       <Greeting ok={ok} detail={uplinkError} />
       <main>
         <Tiles
-          anomalies={dash(anomalies.data?.error_events)}
-          unassigned={anomalies.data ? unassigned.length : "—"}
+          anomalies={
+            anomalies.loading ? "—" : dash(anomalies.data?.error_events)
+          }
+          unassigned={
+            anomalies.data && !anomalies.loading ? unassigned.length : "—"
+          }
           findings={dash(overview.data?.counts.findings)}
           measures={dash(overview.data?.counts.remediations)}
         />
         <AnomalyStream
           data={anomalies.data}
+          loading={anomalies.loading}
           windowMinutes={windowMinutes}
           onWindowChange={setWindowMinutes}
           availableContainers={containers.data?.containers ?? []}

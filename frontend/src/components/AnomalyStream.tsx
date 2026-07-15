@@ -1,4 +1,5 @@
 import type { AnomaliesResponse } from "../api/types";
+import { GroupingStatus } from "./GroupingStatus";
 import { Sparkline } from "./Sparkline";
 
 const WINDOWS = [
@@ -10,6 +11,7 @@ const WINDOWS = [
 
 interface AnomalyStreamProps {
   data: AnomaliesResponse | null;
+  loading: boolean;
   windowMinutes: number;
   onWindowChange: (minutes: number) => void;
   availableContainers: string[];
@@ -19,6 +21,7 @@ interface AnomalyStreamProps {
 
 export function AnomalyStream({
   data,
+  loading,
   windowMinutes,
   onWindowChange,
   availableContainers,
@@ -32,16 +35,22 @@ export function AnomalyStream({
     ? `within the designated containment field of ${selectedContainers.length} ` +
       `container${selectedContainers.length === 1 ? "" : "s"}.`
     : "across the entire installation.";
-  const note = data
-    ? `${data.error_events} error-severity events among ${data.total_events} observed ` +
-      `in the last ${windowLabel}, ${scope}` +
-      (data.truncated
-        ? " Regrettably, the survey reached the archive's event limit — the newest portion of this window is not yet represented." +
-          (filtered
-            ? ""
-            : " May I suggest narrowing the containment field, Reclaimer?")
-        : "")
-    : "Error-severity events observed across the entire installation, regardless of containment protocol.";
+  // While a survey is in flight, `data` still describes the *previous* window
+  // or containment field. Reporting its counts under the new heading would
+  // attribute one window's anomalies to another, so the tallies wait.
+  const note = loading
+    ? `Surveying the last ${windowLabel}, ${scope} The archive is extensive; ` +
+      `a moment, Reclaimer.`
+    : data
+      ? `${data.error_events} error-severity events among ${data.total_events} observed ` +
+        `in the last ${windowLabel}, ${scope}` +
+        (data.truncated
+          ? " Regrettably, this window exceeds my per-survey cataloging capacity — the oldest portion is catalogued, the remainder awaits." +
+            (filtered
+              ? ""
+              : " May I suggest narrowing the containment field, Reclaimer?")
+          : "")
+      : "Error-severity events observed across the entire installation, regardless of containment protocol.";
 
   // A selected container may stop logging and drop out of the label values;
   // keep it listed so the operator can still uncheck it.
@@ -110,7 +119,11 @@ export function AnomalyStream({
         </div>
       </div>
       <p className="panel-note">{note}</p>
-      {data && <Sparkline timeline={data.timeline} />}
+      {loading ? (
+        <GroupingStatus text={`Surveying the last ${windowLabel}…`} />
+      ) : (
+        data && <Sparkline timeline={data.timeline} />
+      )}
     </section>
   );
 }

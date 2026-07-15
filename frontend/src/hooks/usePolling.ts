@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export interface Polling<T> {
   data: T | null;
   error: Error | null;
+  // True while `data` belongs to a different query than the current `deps` —
+  // on first load, and between changing the query and its result arriving.
+  // Callers whose data is labelled with the query (the survey window, say)
+  // must not present `data` as the answer while this is set.
+  loading: boolean;
   refetch: () => Promise<T>;
 }
 
@@ -22,17 +27,32 @@ export function usePolling<T>(
 ): Polling<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  // Which query the settled `data`/`error` describes, compared against the
+  // current one to derive `loading`.
+  const [settledKey, setSettledKey] = useState<string | null>(null);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  const key = JSON.stringify(deps);
+  const keyRef = useRef(key);
+  keyRef.current = key;
 
   const refetch = useCallback(async () => {
+    const requestKey = keyRef.current;
     try {
       const result = await fetcherRef.current();
+      // Queries differ in cost — a 24h survey outruns a 1h one — so a slow
+      // reply to a query the operator has already moved on from must not
+      // overwrite the newer one it lost the race to.
+      if (keyRef.current !== requestKey) return result;
       setData(result);
       setError(null);
+      setSettledKey(requestKey);
       return result;
     } catch (err) {
-      setError(err as Error);
+      if (keyRef.current === requestKey) {
+        setError(err as Error);
+        setSettledKey(requestKey);
+      }
       throw err;
     }
   }, []);
@@ -55,5 +75,5 @@ export function usePolling<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [delay, ...deps]);
 
-  return { data, error, refetch };
+  return { data, error, loading: settledKey !== key, refetch };
 }
