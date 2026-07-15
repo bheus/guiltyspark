@@ -88,9 +88,14 @@ All settings are environment variables. The most important ones are:
 | --- | --- |
 | `LOKI_URL` | Base URL for Loki, for example `http://loki:3100`. |
 | `LOKI_QUERY` | LogQL query to monitor, for example `'{job=~".+"}'`. |
+| `LOKI_LIMIT` | Maximum log lines fetched per query range. Defaults to `5000`. |
+| `LOKI_BEARER_TOKEN` | Optional bearer token for an authenticated Loki instance. |
+| `LOKI_BASIC_AUTH` | Optional `user:password` basic-auth credential for Loki. |
 | `CODEX_HOME` | Persistent Codex auth/config directory. Defaults to `/data/codex` in Docker. |
-| `GUILTYSPARK_INTERVAL_SECONDS` | Poll interval for daemon mode. |
-| `GUILTYSPARK_LOOKBACK_SECONDS` | Initial lookback if no cursor exists. |
+| `GUILTYSPARK_INTERVAL_SECONDS` | Poll interval for daemon mode. Defaults to `300`. |
+| `GUILTYSPARK_LOOKBACK_SECONDS` | Initial lookback if no cursor exists. Defaults to `900`. |
+| `GUILTYSPARK_MIN_EVENTS` | Minimum events before a group of log lines counts as an incident. Defaults to `2`. |
+| `GUILTYSPARK_MAX_INCIDENTS_PER_RUN` | Cap on incidents analyzed in a single poll cycle. Defaults to `8`. |
 | `GUILTYSPARK_STATE_PATH` | SQLite state path. |
 | `GUILTYSPARK_FINDINGS_PATH` | JSONL findings output path. |
 | `GUILTYSPARK_RUNBOOK_PATH` | Markdown runbook the agent reads before analysis. |
@@ -98,13 +103,16 @@ All settings are environment variables. The most important ones are:
 | `RESEND_API_KEY` | Resend API key. Enables an email when guiltyspark opens a PR (only fires for its own PRs, never your manual ones). |
 | `GUILTYSPARK_NOTIFY_EMAIL_FROM` | Verified Resend sender address for PR-opened emails. |
 | `GUILTYSPARK_NOTIFY_EMAIL_TO` | Recipient address for PR-opened emails. |
+| `GUILTYSPARK_MODEL` | Model passed to `codex exec --model`. Unset uses the Codex CLI default. |
 | `GUILTYSPARK_CODEX_PATH` | Codex CLI binary. Defaults to `codex`. |
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
+| `GUILTYSPARK_CODEX_TIMEOUT_SECONDS` | Timeout for a single Codex invocation. Defaults to `600`. |
 | `GUILTYSPARK_PR_MODE` | `off`, `plan`, or `branch`. The scaffold defaults to `off`. |
 | `GUILTYSPARK_TARGETS_PATH` | Optional TOML file mapping Loki queries to GitHub repositories. Seeds the target store on first run only; the DB is authoritative thereafter. |
 | `GUILTYSPARK_TARGETS_JSON` | JSON target list, intended for Portainer stack configuration. Seeds the target store on first run only; edit targets from the dashboard afterward. |
 | `GUILTYSPARK_REMEDIATION_ROOT` | Parent directory for short-lived isolated clones. |
 | `GUILTYSPARK_GITHUB_TOKEN_ENV` | Name of the environment variable containing the GitHub token. |
+| `GUILTYSPARK_GITHUB_API_URL` | GitHub API base URL, for GitHub Enterprise. Defaults to `https://api.github.com`. |
 | `GUILTYSPARK_DASHBOARD_HOST` | Bind address for `guiltyspark dashboard`. Defaults to `0.0.0.0`. |
 | `GUILTYSPARK_DASHBOARD_PORT` | Port for the web dashboard. Defaults to `8343`. |
 | `GUILTYSPARK_DASHBOARD_GROUPING` | When enabled, the dashboard asks Codex to cluster related unassigned anomalies into a single semantic group so an operator can silence a whole class at once, and to propose a **silence pattern** (a service-scoped regex) that suppresses current *and future* variants. Patterns are always operator-reviewed before they take effect — the UI shows the proposal and its live blast radius; nothing is auto-applied. Costs a Codex call when a new anomaly class appears (clustering is cached against the unassigned fingerprint set; count-only changes reuse it) and one per pattern proposal. Requires the `codex` binary. Falls back to the flat list on any Codex error. Defaults to `false`. |
@@ -226,7 +234,9 @@ catalogued findings, remediation history, and a live
 Loki view of recent error-severity events. Each live incident is classified into the
 target whose stream selector matches its labels; anything that matches no configured
 target is surfaced as an **unassigned anomaly**, so errors outside your containment
-protocols are still visible.
+protocols are still visible. A container picker (backed by
+`GUILTYSPARK_DASHBOARD_FILTER_LABEL`) narrows the survey server-side, so the
+`LOKI_LIMIT` budget is spent only on the containers you selected.
 
 The dashboard is also the control surface for configuration:
 
@@ -238,15 +248,29 @@ The dashboard is also the control surface for configuration:
   **Silenced anomalies**. Silencing captures the anomaly's service, level, a sample line,
   and event count so the entry stays legible after it leaves the stream, and each entry
   carries an editable triage note for your own reference. Any entry can be restored.
+- **Silence patterns** — a durable, service-scoped regex rule that suppresses current
+  *and future* variants of a noise class, rather than one fingerprint at a time. With
+  `GUILTYSPARK_DASHBOARD_GROUPING` enabled, Codex proposes the pattern and the UI shows
+  its live blast radius; nothing is applied until you commit it. Rules carry an editable
+  title and note, and an invalid regex is skipped rather than breaking the anomaly view.
+
+With `GUILTYSPARK_DASHBOARD_GROUPING` enabled, clustering runs **off the request path**:
+a worker computes groups in the background, the API returns `groups_pending` while that
+is in flight, and the UI shows a cataloging state over the flat fallback list, polling
+every 2s until the groups land.
 
 The page is a React + TypeScript app (in `frontend/`, see Development above) that
 talks only to the JSON API, so backend and client evolve independently. It polls
 every 60s and reconciles in place — open incident cards and in-progress edits
 survive a refresh. Read endpoints: `/api/overview`, `/api/findings`,
-`/api/remediations`, `/api/anomalies?minutes=N`, `/api/targets`,
-`/api/anomalies/ignored`. Write endpoints: `POST`/`DELETE /api/targets`,
-`POST`/`DELETE /api/anomalies/ignore`, and `POST /api/anomalies/note` (edit a
-silenced anomaly's triage note).
+`/api/remediations`, `/api/anomalies?minutes=N[&containers=…]`,
+`/api/containers?minutes=N`, `/api/targets`, `/api/anomalies/ignored` (silenced
+fingerprints and pattern rules). Write endpoints: `POST`/`DELETE /api/targets`,
+`POST`/`DELETE /api/anomalies/ignore`, `POST /api/anomalies/ignore-batch` (silence a
+whole group), `POST /api/anomalies/suggest-pattern` (ask Codex for a pattern
+proposal), `POST`/`DELETE /api/anomalies/rules`, `POST /api/anomalies/rules/metadata`
+(edit a rule's title/note), and `POST /api/anomalies/note` (edit a silenced anomaly's
+triage note).
 
 The dashboard is **unauthenticated**, and it can now modify configuration and trigger
 target changes. Keep it on a trusted LAN and do not expose it to the public internet.
