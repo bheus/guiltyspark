@@ -193,15 +193,15 @@
         <!-- containment record -->
         <div style="margin-bottom:18px;">
           <div style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Containment Record</div>
-          <p style="color:#a7bccd; font-size:14.5px; max-width:76ch;">Greetings, Reclaimer. <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">inventory-api</code> logged 612 failed product requests between 02:14 and 02:18. Each attempted to read an item that no longer existed, producing the same null-pointer malfunction. The anomaly is recurrent and, I am pleased to report, entirely correctable.</p>
+          <p style="color:#a7bccd; font-size:14.5px; max-width:76ch;">Greetings, Reclaimer. <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">inventory-api</code> logged 612 failed product requests between 02:14 and 02:18. Each attempted to read an item that no longer existed, producing the same nil-reference malfunction. The anomaly is recurrent and, I am pleased to report, entirely correctable.</p>
         </div>
 
         <!-- evidence -->
         <div style="margin-bottom:18px;">
           <div style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Evidence Archive</div>
           <div style="background:#0a0f17; border:1px solid #12202f; padding:12px 14px; font-family:'JetBrains Mono',monospace; font-size:12px; line-height:1.9; overflow-x:auto;">
-            <div style="color:#7c93ab;"><span style="color:#4e6378;">02:14:07</span> <span style="color:#e8505b;">ERROR</span> java.lang.NullPointerException: Cannot invoke &quot;Product.getName()&quot; because &quot;product&quot; is null</div>
-            <div style="color:#7c93ab;"><span style="color:#4e6378;">02:14:07</span> <span style="color:#e8505b;">ERROR</span> at InventoryService.getProduct(InventoryService.java:47)</div>
+            <div style="color:#7c93ab;"><span style="color:#4e6378;">02:14:07</span> <span style="color:#e8505b;">ERROR</span> NoMethodError: undefined method `name' for nil</div>
+            <div style="color:#7c93ab;"><span style="color:#4e6378;">02:14:07</span> <span style="color:#e8505b;">ERROR</span> app/services/inventory_service.rb:47:in `get_product'</div>
             <div style="color:#4e6378;">… 610 further occurrences, clustered to one issue</div>
           </div>
         </div>
@@ -209,7 +209,7 @@
         <!-- causal -->
         <div style="margin-bottom:18px;">
           <div style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Causal Assessment</div>
-          <p style="color:#a7bccd; font-size:14.5px; max-width:76ch;">The repository returns <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">null</code> when an item is absent, but the service dereferences it before checking. Every trace terminates at the same line after requests for deleted product IDs. A missing item should produce a controlled <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">404</code>, not an internal server error.</p>
+          <p style="color:#a7bccd; font-size:14.5px; max-width:76ch;">The repository returns <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">nil</code> when an item is absent, but the service dereferences it before checking. Every trace terminates at the same line after requests for deleted product IDs. A missing item should produce a controlled <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">404</code>, not an internal server error.</p>
         </div>
 
         <!-- corrective protocol / diff -->
@@ -219,13 +219,11 @@
             <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#4e6378;">2 files changed · within allowed paths · under change limit</span>
           </div>
           <div class="gs-diff" style="background:#0a0f17; border:1px solid #12202f; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.9; overflow-x:auto;">
-            <div style="padding:7px 14px; border-bottom:1px solid #12202f; color:#7c93ab; font-size:11.5px;">src/main/java/InventoryService.java</div>
+            <div style="padding:7px 14px; border-bottom:1px solid #12202f; color:#7c93ab; font-size:11.5px;">app/services/inventory_service.rb</div>
             <div style="padding:8px 0;">
-              <div style="padding:0 14px; color:#7c93ab;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Product product = repository.findById(id);</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+&nbsp;&nbsp;&nbsp;&nbsp;if (product == null) {</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;throw new ProductNotFoundException(id);</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+&nbsp;&nbsp;&nbsp;&nbsp;}</div>
-              <div style="padding:0 14px; color:#7c93ab;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return ProductResponse.from(product);</div>
+              <div style="padding:0 14px; color:#7c93ab;">&nbsp;&nbsp;&nbsp;product = repository.find(id)</div>
+              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+&nbsp;&nbsp;raise NotFound, id unless product</div>
+              <div style="padding:0 14px; color:#7c93ab;">&nbsp;&nbsp;&nbsp;ProductResponse.from(product)</div>
             </div>
           </div>
         </div>
@@ -234,9 +232,9 @@
         <div style="margin-bottom:20px;">
           <div class="gs-verification-heading" style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Verification Sequence</div>
           <div class="gs-verification-list">
-            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">InventoryServiceTest.missingProductReturns404</span> <span class="gs-verification-detail" style="color:#4e6378;">— fails without patch</span></div>
-            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">./gradlew test</span> <span class="gs-verification-detail" style="color:#4e6378;">— 128 passed in 6.4s</span></div>
-            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">./gradlew check</span> <span class="gs-verification-detail" style="color:#4e6378;">— clean</span></div>
+            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">returns 404 for a missing product</span> <span class="gs-verification-detail" style="color:#4e6378;">— fails without patch</span></div>
+            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">bundle exec rspec</span> <span class="gs-verification-detail" style="color:#4e6378;">— 128 passed in 6.4s</span></div>
+            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">bundle exec rubocop</span> <span class="gs-verification-detail" style="color:#4e6378;">— clean</span></div>
           </div>
         </div>
 
