@@ -111,7 +111,8 @@ def _seed_targets_from_env(settings: Settings, store: StateStore) -> None:
 def _print_summary(summary: RunSummary) -> None:
     print(
         f"target={summary.target_id} events={summary.events} incidents={summary.incidents} "
-        f"new_findings={summary.findings} remediations={summary.remediations}"
+        f"new_findings={summary.findings} remediations={summary.remediations} "
+        f"truncated={summary.truncated}"
     )
 
 

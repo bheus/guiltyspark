@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from guiltyspark.config import Settings
-from guiltyspark.monitor import FleetMonitor
+from guiltyspark.models import LogEvent
+from guiltyspark.monitor import FleetMonitor, Monitor
 from guiltyspark.targets import Target
 
 
@@ -41,6 +43,67 @@ def _target(target_id: str, query: str) -> Target:
             "github_repo": f"owner/{target_id}",
         }
     )
+
+
+def _monitor(tmp_path: Path, events: list[LogEvent]) -> Monitor:
+    class FakeLoki:
+        def query_range(self, **kwargs):
+            return list(events)
+
+    class FakeAnalyzer:
+        async def analyze(self, *args, **kwargs):
+            return []
+
+    class FakeRepoDocs:
+        def expected_logs(self, target):
+            return None
+
+    monitor = Monitor(_settings(tmp_path))
+    monitor.loki = FakeLoki()  # type: ignore[assignment]
+    monitor.analyzer = FakeAnalyzer()  # type: ignore[assignment]
+    monitor.repo_docs = FakeRepoDocs()  # type: ignore[assignment]
+    return monitor
+
+
+def _events(count: int, first_ts_ns: int) -> list[LogEvent]:
+    return [
+        LogEvent(ts_ns=first_ts_ns + index, labels={"job": "web"}, line=f"boom {index}")
+        for index in range(count)
+    ]
+
+
+def test_cursor_resumes_from_last_event_when_query_is_truncated(tmp_path):
+    # A full page means Loki withheld the rest of the window; the cursor must not
+    # jump past the events we never saw.
+    events = _events(100, first_ts_ns=1_000)
+    monitor = _monitor(tmp_path, events)
+
+    summary = asyncio.run(monitor.run_once())
+
+    assert summary.truncated is True
+    assert summary.cursor_ns == events[-1].ts_ns + 1
+    assert summary.cursor_ns < summary.end_ns
+    assert monitor.state.get_cursor_ns("default") == events[-1].ts_ns + 1
+
+
+def test_cursor_advances_to_window_end_when_query_is_complete(tmp_path):
+    monitor = _monitor(tmp_path, _events(3, first_ts_ns=1_000))
+
+    summary = asyncio.run(monitor.run_once())
+
+    assert summary.truncated is False
+    assert summary.cursor_ns == summary.end_ns
+    assert monitor.state.get_cursor_ns("default") == summary.end_ns
+
+
+def test_empty_result_still_advances_cursor(tmp_path):
+    # No events is not truncation: a quiet window must not pin the cursor forever.
+    monitor = _monitor(tmp_path, [])
+
+    summary = asyncio.run(monitor.run_once())
+
+    assert summary.truncated is False
+    assert monitor.state.get_cursor_ns("default") == summary.end_ns
 
 
 def test_fleet_monitor_hot_reloads_target_set(tmp_path):

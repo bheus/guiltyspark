@@ -30,6 +30,8 @@ class RunSummary:
     end_ns: int
     target_id: str = "default"
     remediations: int = 0
+    truncated: bool = False
+    cursor_ns: int = 0
 
 
 class Monitor:
@@ -66,13 +68,18 @@ class Monitor:
             end_ns=end_ns,
             limit=self.settings.loki_limit,
         )
+        # A full page means Loki capped the window mid-stream: with direction=forward
+        # it returned the oldest matches and withheld the rest. Resume from the last
+        # event actually seen so the remainder is picked up next cycle.
+        truncated = len(events) >= self.settings.loki_limit and bool(events)
+        cursor_ns = events[-1].ts_ns + 1 if truncated else end_ns
         incidents = group_incidents(events, min_events=self.settings.min_events)
         incidents = incidents[: self.settings.max_incidents_per_run]
         expected_logs = self.repo_docs.expected_logs(self.target)
         findings = await self.analyzer.analyze(incidents, self.target, expected_logs)
         new_findings = self._write_new_findings(findings)
         remediations = await self._remediate(findings, incidents)
-        self.state.set_cursor_ns(end_ns, self.target_id)
+        self.state.set_cursor_ns(cursor_ns, self.target_id)
         return RunSummary(
             events=len(events),
             incidents=len(incidents),
@@ -81,6 +88,8 @@ class Monitor:
             end_ns=end_ns,
             target_id=self.target_id,
             remediations=remediations,
+            truncated=truncated,
+            cursor_ns=cursor_ns,
         )
 
     async def run_forever(self) -> None:
@@ -90,7 +99,7 @@ class Monitor:
                 summary = await self.run_once()
                 print(
                     f"{started} events={summary.events} incidents={summary.incidents} "
-                    f"new_findings={summary.findings}",
+                    f"new_findings={summary.findings} truncated={summary.truncated}",
                     flush=True,
                 )
             except Exception as exc:
@@ -262,7 +271,7 @@ class FleetMonitor:
                     print(
                         f"{started} target={summary.target_id} events={summary.events} "
                         f"incidents={summary.incidents} new_findings={summary.findings} "
-                        f"remediations={summary.remediations}",
+                        f"remediations={summary.remediations} truncated={summary.truncated}",
                         flush=True,
                     )
                 except Exception as exc:
