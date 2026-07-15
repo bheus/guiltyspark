@@ -108,6 +108,15 @@
   @keyframes gs-halo { 0%,100% { opacity: 0.55; } 50% { opacity: 0.9; } }
   @media (prefers-reduced-motion: reduce) { .gs-anim { animation: none !important; } }
   @media (max-width: 880px) { .gs-split { grid-template-columns: 1fr !important; } .gs-nav-links { display: none !important; } .gs-nav-cta { margin-left: auto; } }
+  .gs-verification-list { display: flex; flex-direction: column; gap: 7px; }
+  .gs-verification-row { display: flex; align-items: baseline; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #a7bccd; }
+  @media (max-width: 520px) {
+    .gs-diff { font-size: 11.5px !important; }
+    .gs-verification-heading { margin-bottom: 10px !important; }
+    .gs-verification-list { gap: 9px; }
+    .gs-verification-row { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; row-gap: 1px; line-height: 1.55; }
+    .gs-verification-detail { grid-column: 2; }
+  }
 </style>
 </head>
 <body>
@@ -200,7 +209,7 @@
         <!-- causal -->
         <div style="margin-bottom:18px;">
           <div style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Causal Assessment</div>
-          <p style="color:#a7bccd; font-size:14.5px; max-width:76ch;">The client is constructed without a retry policy, so the brief pause while Redis forks to write its snapshot is surfaced to callers as a hard failure rather than being absorbed. The window matches <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">save 300 10</code> in your Redis configuration precisely.</p>
+          <p style="color:#a7bccd; font-size:14.5px; max-width:76ch;">The client's retry policy allows zero recovery attempts, so the brief pause while Redis forks to write its snapshot is surfaced to callers as a hard failure rather than being absorbed. The window matches <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">save 300 10</code> in your Redis configuration precisely.</p>
         </div>
 
         <!-- corrective protocol / diff -->
@@ -209,27 +218,25 @@
             <span style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4;">Corrective Protocol</span>
             <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#4e6378;">2 files changed · within allowed paths · under change limit</span>
           </div>
-          <div style="background:#0a0f17; border:1px solid #12202f; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.9; overflow-x:auto;">
+          <div class="gs-diff" style="background:#0a0f17; border:1px solid #12202f; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.9; overflow-x:auto;">
             <div style="padding:7px 14px; border-bottom:1px solid #12202f; color:#7c93ab; font-size:11.5px;">src/inventory/cache.py</div>
             <div style="padding:8px 0;">
-              <div style="padding:0 14px; color:#7c93ab;">&nbsp;from redis import Redis</div>
-              <div style="padding:0 14px; background:rgba(232,80,91,0.09); color:#e8505b;">- conn = Redis.from_url(settings.redis_url)</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+ conn = Redis.from_url(</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+     settings.redis_url,</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+     retry=Retry(ExponentialBackoff(base=0.05, cap=1.0), retries=3),</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+     retry_on_error=[ConnectionError],</div>
-              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+ )</div>
+              <div style="padding:0 14px; color:#7c93ab;">&nbsp;retry = Retry(</div>
+              <div style="padding:0 14px; color:#7c93ab;">&nbsp;    NoBackoff(),</div>
+              <div style="padding:0 14px; background:rgba(232,80,91,0.09); color:#e8505b;">-     retries=0,</div>
+              <div style="padding:0 14px; background:rgba(67,179,106,0.09); color:#43b36a;">+     retries=3,</div>
+              <div style="padding:0 14px; color:#7c93ab;">&nbsp;)</div>
             </div>
           </div>
         </div>
 
         <!-- verification -->
         <div style="margin-bottom:20px;">
-          <div style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Verification Sequence</div>
-          <div style="display:flex; flex-direction:column; gap:7px;">
-            <div style="display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:12.5px; color:#a7bccd;"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">tests/test_cache.py::test_retries_on_snapshot_reset</span> <span style="color:#4e6378;">— new, fails without this patch</span></div>
-            <div style="display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:12.5px; color:#a7bccd;"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">pytest</span> <span style="color:#4e6378;">— 128 passed in 6.4s</span></div>
-            <div style="display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:12.5px; color:#a7bccd;"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">ruff check .</span> <span style="color:#4e6378;">— clean</span></div>
+          <div class="gs-verification-heading" style="font-family:'Saira Condensed',sans-serif; font-size:12px; letter-spacing:0.2em; text-transform:uppercase; color:#5fd4f4; margin-bottom:7px;">Verification Sequence</div>
+          <div class="gs-verification-list">
+            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">test_cache.py::test_retries</span> <span class="gs-verification-detail" style="color:#4e6378;">— fails without patch</span></div>
+            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">pytest</span> <span class="gs-verification-detail" style="color:#4e6378;">— 128 passed in 6.4s</span></div>
+            <div class="gs-verification-row"><span style="color:#43b36a; font-weight:700;">✓</span> <span style="color:#7c93ab;">ruff check .</span> <span class="gs-verification-detail" style="color:#4e6378;">— clean</span></div>
           </div>
         </div>
 
