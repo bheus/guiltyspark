@@ -149,24 +149,60 @@ class StateStore:
         return {"pr_url": row[0], "status": row[1], "created_at": row[2]}
 
     def enqueue_remediation_job(
-        self, target_id: str, fingerprint: str, payload: str
+        self,
+        target_id: str,
+        fingerprint: str,
+        payload: str,
+        *,
+        status: str = "pending",
     ) -> None:
+        if status not in {"held", "pending"}:
+            raise ValueError("new remediation job status must be held or pending")
         with self._connect() as db:
             db.execute(
-                "insert into remediation_jobs(target_id, fingerprint, payload) values (?, ?, ?) "
+                "insert into remediation_jobs(target_id, fingerprint, payload, status) "
+                "values (?, ?, ?, ?) "
                 "on conflict(target_id, fingerprint) do update set payload = excluded.payload",
-                (target_id, fingerprint, payload),
+                (target_id, fingerprint, payload, status),
             )
 
+    def held_remediation_jobs(self, target_id: str) -> int:
+        with self._connect() as db:
+            row = db.execute(
+                "select count(*) from remediation_jobs "
+                "where target_id = ? and status = 'held'",
+                (target_id,),
+            ).fetchone()
+        return int(row[0])
+
+    def release_held_remediation_jobs(self, target_id: str) -> int:
+        """Authorize all observation-time dossiers for worker processing."""
+        with self._connect() as db:
+            cursor = db.execute(
+                "update remediation_jobs set status = 'pending', "
+                "updated_at = current_timestamp "
+                "where target_id = ? and status = 'held'",
+                (target_id,),
+            )
+        return cursor.rowcount
+
     def pending_remediation_jobs(
-        self, target_id: str, include_validated: bool = False
+        self,
+        target_id: str,
+        include_validated: bool = False,
+        limit: int | None = None,
     ) -> list[tuple[str, str]]:
         statuses = "('pending', 'failed', 'validated')" if include_validated else "('pending', 'failed')"
+        limit_sql = "" if limit is None else " limit ?"
+        parameters: tuple[object, ...] = (target_id,)
+        if limit is not None:
+            parameters += (max(0, int(limit)),)
         with self._connect() as db:
             rows = db.execute(
                 f"select fingerprint, payload from remediation_jobs "
-                f"where target_id = ? and status in {statuses} order by updated_at",
-                (target_id,),
+                f"where target_id = ? and status in {statuses} "
+                f"order by updated_at{limit_sql}",
+                parameters,
             ).fetchall()
         return [(str(row[0]), str(row[1])) for row in rows]
 

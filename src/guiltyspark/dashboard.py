@@ -294,19 +294,43 @@ class DashboardService:
 
     def list_targets(self) -> dict:
         """Full target configs for the editor, in the store's canonical form."""
+        targets = []
+        for target in self._targets():
+            payload = target_to_payload(target)
+            payload["held_remediations"] = self.state.held_remediation_jobs(target.id)
+            targets.append(payload)
         return {
             "generated_at": _now_iso(),
             "modes": sorted(VALID_MODES),
-            "targets": [target_to_payload(target) for target in self._targets()],
+            "targets": targets,
         }
 
     def save_target(self, payload: dict) -> dict:
         """Validate and upsert a single target. Raises ValueError on bad input."""
         if not isinstance(payload, dict):
             raise ValueError("target payload must be a JSON object")
+        release_observed = payload.get("release_observed", False) is True
         target = Target.from_dict(payload)
+        previous = next(
+            (
+                item
+                for item in self.state.list_target_payloads()
+                if str(item.get("id", "")) == target.id
+            ),
+            None,
+        )
+        release_allowed = previous is not None and target.mode != "observe"
+        if release_observed and not release_allowed:
+            raise ValueError(
+                "held anomalies may only be released for an active protocol"
+            )
         self.state.upsert_target(target.id, target_to_payload(target))
-        return {"target": target_to_payload(target)}
+        released = (
+            self.state.release_held_remediation_jobs(target.id)
+            if release_observed
+            else 0
+        )
+        return {"target": target_to_payload(target), "released_remediations": released}
 
     def delete_target(self, target_id: str) -> dict:
         if not target_id:

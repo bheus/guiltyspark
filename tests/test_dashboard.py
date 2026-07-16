@@ -697,6 +697,35 @@ class TestDashboardService:
         service.delete_target("store")
         assert service._bucket_for({"container": "store-crawler"}) == "unassigned"
 
+    def test_promotion_can_explicitly_release_observed_anomalies(self, tmp_path):
+        service = DashboardService(_settings(tmp_path), [_target()])
+        service.state.enqueue_remediation_job(
+            "abraham", "observed-fp", '{"case": 1}', status="held"
+        )
+        listed = service.list_targets()["targets"][0]
+        assert listed["held_remediations"] == 1
+
+        promoted = dict(listed)
+        promoted.update(
+            mode="pr",
+            test_commands=["pytest"],
+            allowed_paths=["src", "tests"],
+            release_observed=True,
+        )
+        result = service.save_target(promoted)
+
+        assert result["released_remediations"] == 1
+        assert service.state.held_remediation_jobs("abraham") == 0
+        assert len(service.state.pending_remediation_jobs("abraham")) == 1
+
+    def test_release_requires_an_active_protocol(self, tmp_path):
+        service = DashboardService(_settings(tmp_path), [_target()])
+        payload = service.list_targets()["targets"][0]
+        payload["release_observed"] = True
+
+        with pytest.raises(ValueError, match="active protocol"):
+            service.save_target(payload)
+
     def test_overview_counts(self, tmp_path):
         settings = _settings(tmp_path)
         state = StateStore(settings.state_path)

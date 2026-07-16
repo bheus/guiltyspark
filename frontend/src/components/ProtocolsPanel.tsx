@@ -18,6 +18,11 @@ function ProtocolRow({
         {target.mode}
       </span>
       <span className="protocol-repo">{target.github_repo}</span>
+      {(target.held_remediations ?? 0) > 0 && (
+        <span className="panel-tag">
+          {target.held_remediations} held
+        </span>
+      )}
       <span className="protocol-actions">
         <button type="button" className="btn" onClick={() => onEdit(target)}>
           Amend

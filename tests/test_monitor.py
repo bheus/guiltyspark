@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 
 from guiltyspark.config import Settings
-from guiltyspark.models import LogEvent
+from guiltyspark.models import Finding, Incident, LogEvent
 from guiltyspark.monitor import FleetMonitor, Monitor
+from guiltyspark.remediation import RemediationResult
 from guiltyspark.targets import Target
 
 
@@ -136,3 +138,73 @@ def test_fleet_monitor_rebuilds_monitor_on_config_change(tmp_path):
     second = fleet._sync()[0]
     assert second is not first
     assert second.target.loki_query == "{a=999}"
+
+
+def test_observe_holds_remediation_until_operator_releases_it(tmp_path):
+    settings = replace(_settings(tmp_path), dedup_issues=False)
+    observe = _target("web", "{a=1}")
+    monitor = Monitor(settings, observe)
+    incident = Incident(
+        fingerprint="fp-observed",
+        service="web",
+        level="error",
+        first_seen_ns=1,
+        last_seen_ns=2,
+        count=2,
+        labels={"service": "web"},
+        samples=["request handler crashed"],
+    )
+    finding = Finding(
+        fingerprint=incident.fingerprint,
+        title="Keep the request handler alive",
+        severity="high",
+        summary="The request handler crashed.",
+        evidence=["request handler crashed"],
+        suspected_cause="An unchecked error path.",
+        recommended_fix="Handle the error and add a regression test.",
+        pr_recommended=True,
+        raw={},
+    )
+
+    attempted = asyncio.run(monitor._remediate([finding], [incident]))
+
+    assert attempted == 0
+    assert monitor.state.held_remediation_jobs("web") == 1
+    assert monitor.state.pending_remediation_jobs("web") == []
+
+    assert monitor.state.release_held_remediation_jobs("web") == 1
+    monitor.target = Target.from_dict(
+        {
+            "id": "web",
+            "loki_url": "http://loki.invalid:3100",
+            "loki_query": "{a=1}",
+            "github_repo": "owner/web",
+            "mode": "pr",
+            "test_commands": ["pytest"],
+            "allowed_paths": ["src", "tests"],
+        }
+    )
+
+    class FakeRemediator:
+        def repair(self, target, queued_incident, queued_finding):
+            assert target.mode == "pr"
+            assert queued_incident.fingerprint == incident.fingerprint
+            return RemediationResult(
+                "pr-opened",
+                "verification complete",
+                branch="guiltyspark/fp-observed",
+                pr_url="https://github.com/owner/web/pull/1",
+            )
+
+    monitor.remediator = FakeRemediator()  # type: ignore[assignment]
+
+    class DisabledEmail:
+        enabled = False
+
+        def send_pr_opened(self, *args):
+            return None
+
+    monitor.email_notifier = DisabledEmail()  # type: ignore[assignment]
+
+    assert asyncio.run(monitor._remediate([], [])) == 1
+    assert monitor.state.pending_remediation_jobs("web") == []

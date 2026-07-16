@@ -96,6 +96,7 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_LOOKBACK_SECONDS` | Initial lookback if no cursor exists. Defaults to `900`. |
 | `GUILTYSPARK_MIN_EVENTS` | Minimum events before a group of log lines counts as an incident. Defaults to `2`. |
 | `GUILTYSPARK_MAX_INCIDENTS_PER_RUN` | Cap on incidents analyzed in a single poll cycle. Defaults to `8`. |
+| `GUILTYSPARK_MAX_REMEDIATIONS_PER_RUN` | Cap on queued corrective measures attempted per target in one cycle. This throttles released observation backlogs and defaults to `3`. |
 | `GUILTYSPARK_STATE_PATH` | SQLite state path. |
 | `GUILTYSPARK_FINDINGS_PATH` | JSONL findings output path. |
 | `GUILTYSPARK_RUNBOOK_PATH` | Markdown runbook the agent reads before analysis. |
@@ -160,7 +161,7 @@ ignored — analysis proceeds without the extra context. The fetch is cached per
 
 Target modes are deliberately progressive:
 
-- `observe`: detect and diagnose only.
+- `observe`: detect and diagnose only; retain PR-recommended anomalies as held remediation dossiers. When promoting the protocol in the dashboard, the operator may explicitly release that backlog for corrective action.
 - `fix`: clone, edit, enforce policy, and validate; never push.
 - `draft-pr`: perform the same checks, then push a GuiltySpark branch and open a draft PR.
 - `pr`: perform the same checks, then push a GuiltySpark branch and open a review-ready PR.

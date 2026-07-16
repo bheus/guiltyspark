@@ -134,7 +134,7 @@ class Monitor:
     async def _remediate(
         self, findings: list[Finding], incidents: list[Incident]
     ) -> int:
-        if self.target is None or self.target.mode == "observe":
+        if self.target is None:
             return 0
         incidents_by_fingerprint = {incident.fingerprint: incident for incident in incidents}
         candidates = [
@@ -166,13 +166,23 @@ class Monitor:
                 {"incident": asdict(incident), "finding": asdict(finding)}, sort_keys=True
             )
             self.state.enqueue_remediation_job(
-                self.target_id, finding.fingerprint, payload
+                self.target_id,
+                finding.fingerprint,
+                payload,
+                status="held" if self.target.mode == "observe" else "pending",
             )
+
+        # Observe mode catalogs complete, remediation-ready dossiers but may
+        # never execute them. An operator must explicitly release held jobs
+        # while promoting the target to an active mode.
+        if self.target.mode == "observe":
+            return 0
 
         attempted = 0
         jobs = self.state.pending_remediation_jobs(
             self.target_id,
             include_validated=self.target.mode in {"draft-pr", "pr"},
+            limit=self.settings.max_remediations_per_run,
         )
         for fingerprint, payload_text in jobs:
             payload = json.loads(payload_text)

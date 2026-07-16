@@ -65,6 +65,7 @@ class Settings:
     dashboard_grouping: bool = False
     dashboard_filter_label: str = "container"
     dashboard_max_events: int = 25000
+    max_remediations_per_run: int = 3
     dedup_issues: bool = True
     issue_cooldown_seconds: int = 604800
     issue_active_window_seconds: int = 1209600
@@ -129,6 +130,9 @@ class Settings:
             ).strip()
             or "container",
             dashboard_max_events=_int("GUILTYSPARK_DASHBOARD_MAX_EVENTS", 25000),
+            max_remediations_per_run=max(
+                1, _int("GUILTYSPARK_MAX_REMEDIATIONS_PER_RUN", 3)
+            ),
             dedup_issues=_bool("GUILTYSPARK_DEDUP_ISSUES", True),
             issue_cooldown_seconds=_int("GUILTYSPARK_ISSUE_COOLDOWN_SECONDS", 604800),
             issue_active_window_seconds=_int(

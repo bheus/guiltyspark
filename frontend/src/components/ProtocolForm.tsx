@@ -49,6 +49,7 @@ interface ProtocolFormProps {
 
 export function ProtocolForm({ editing, error, onSubmit, onCancel }: ProtocolFormProps) {
   const [form, setForm] = useState<FormState>(() => initialState(editing));
+  const [releaseObserved, setReleaseObserved] = useState(false);
   const set = (key: keyof FormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -66,8 +67,12 @@ export function ProtocolForm({ editing, error, onSubmit, onCancel }: ProtocolFor
       test_commands: lines(form.test_commands),
       allowed_paths: lines(form.allowed_paths),
       expected_logs_path: form.expected_logs_path.trim(),
+      release_observed: releaseObserved,
     });
   };
+
+  const held = editing?.held_remediations ?? 0;
+  const canRelease = Boolean(editing) && form.mode !== "observe" && held > 0;
 
   return (
     <form className="protocol-form" onSubmit={submit}>
@@ -177,6 +182,20 @@ export function ProtocolForm({ editing, error, onSubmit, onCancel }: ProtocolFor
         A protocol beyond <em>observe</em> requires both a verification sequence
         and permitted paths before I may act.
       </p>
+      {canRelease && (
+        <label className="release-observed">
+          <input
+            type="checkbox"
+            checked={releaseObserved}
+            onChange={(event) => setReleaseObserved(event.target.checked)}
+          />
+          <span>
+            Release {held} catalogued anomal{held === 1 ? "y" : "ies"} for
+            corrective action. The Monitor will process at most a small batch each
+            cycle. Final authorization remains yours, Reclaimer.
+          </span>
+        </label>
+      )}
       {error && <div className="error-state">{error}</div>}
       <div className="form-actions">
         <button type="submit" className="btn btn-primary">

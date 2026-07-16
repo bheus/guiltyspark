@@ -132,6 +132,8 @@ export interface Target {
   test_commands: string[];
   allowed_paths: string[];
   expected_logs_path?: string;
+  held_remediations?: number;
+  release_observed?: boolean;
 }
 
 export interface TargetsResponse {

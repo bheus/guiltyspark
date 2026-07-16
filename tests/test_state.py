@@ -46,6 +46,17 @@ class StateStoreTests(unittest.TestCase):
                 len(store.pending_remediation_jobs("inventory", include_validated=True)), 1
             )
 
+            store.enqueue_remediation_job(
+                "inventory-held", "observed", '{"case": 2}', status="held"
+            )
+            self.assertEqual(store.held_remediation_jobs("inventory-held"), 1)
+            self.assertEqual(store.release_held_remediation_jobs("inventory-held"), 1)
+            self.assertEqual(store.held_remediation_jobs("inventory-held"), 0)
+            self.assertEqual(
+                store.pending_remediation_jobs("inventory-held", limit=1),
+                [("observed", '{"case": 2}')],
+            )
+
     def test_target_crud(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             from pathlib import Path
