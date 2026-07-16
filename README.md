@@ -179,14 +179,37 @@ dashboard is not undone by a restart. The daemon re-reads targets from the store
 the start of every poll cycle, so edits take effect within one interval without a
 restart.
 
-For private repositories and PR modes
-mode, prefer a GitHub App installed only on the configured repositories. Set
+For private repositories and PR modes, prefer a GitHub App installed only on the
+configured repositories. Set
 `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and either `GITHUB_APP_PRIVATE_KEY`
 or `GITHUB_APP_PRIVATE_KEY_FILE`. GuiltySpark mints and caches short-lived
 installation tokens for controller-owned Git and GitHub requests; Codex does not
 receive App credentials or installation tokens. A token provided through
 `GUILTYSPARK_GITHUB_TOKEN_ENV` remains available as a fallback when no App variables
 are configured. Partial App configuration is an error.
+
+### Onboarding A Repository
+
+Adding a target to GuiltySpark does not automatically grant the GitHub App access to
+that repository. Complete all of these steps for every new repository:
+
+1. Add the repository to the GuiltySpark GitHub App installation under **GitHub
+   Settings → Applications → Installed GitHub Apps → Configure → Repository access**.
+   The App needs **Contents: read and write** to push remediation branches and **Pull
+   requests: read and write** to open PRs. This is required for public repositories too:
+   public access permits cloning, but not pushing.
+2. Add the repository target in the dashboard or seed configuration. Start it in
+   `observe` mode and confirm that its Loki selector assigns the intended log streams.
+3. Define narrow `allowed_paths` and representative `test_commands`, then promote the
+   target progressively through `fix`, `draft-pr`, and `pr` as confidence grows.
+4. Before relying on automatic remediation, replay a captured incident with
+   `--allow-push` and confirm that the verification sequence passes and the App can open
+   a PR.
+
+If validation succeeds but publication ends with `Permission to OWNER/REPO denied to
+APP-NAME[bot]` and HTTP 403, first confirm that the repository is selected in the App
+installation. App credentials being present in the container is not sufficient; the
+installation token is scoped to its selected repositories.
 
 ## Replaying A Captured Incident
 

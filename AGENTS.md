@@ -59,8 +59,8 @@ Characteristics of the voice:
 
 The canonical reference implementation of this voice is the PR body in
 `remediation.py` (`_pr_body`), with section headers like *Containment Record*,
-*Evidence Archive*, *Causal Assessment*, *Corrective Protocol*, and *Verification
-Sequence*. Match that register when adding any new communication surface.
+*Evidence Archive*, and *Causal Assessment*. Match that register when adding any new
+communication surface.
 
 Note: internal identifiers, code comments, commit messages, and this file stay plain and
 technical. The voice is for *outward communication*, not the codebase itself.

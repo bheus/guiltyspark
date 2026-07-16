@@ -246,8 +246,6 @@ class RemediationTests(unittest.TestCase):
                         target(mode="draft-pr"),
                         "guiltyspark/app/incident-1",
                         finding,
-                        "pytest passed; token=validation-secret",
-                        ("src/app.py",),
                     )
 
             request = urlopen.call_args.args[0]
@@ -259,10 +257,14 @@ class RemediationTests(unittest.TestCase):
                 body,
             )
             self.assertIn("Containment Record", body)
+            self.assertIn("Evidence Archive", body)
+            self.assertIn("Causal Assessment", body)
             self.assertIn("Final authorization remains yours, Reclaimer", body)
             self.assertIn("Incident designation", body)
+            self.assertNotIn("Corrective Protocol", body)
+            self.assertNotIn("Verification Sequence", body)
+            self.assertNotIn("src/app.py", body)
             self.assertNotIn("very-secret-token", body)
-            self.assertNotIn("validation-secret", body)
 
     def test_pr_mode_creates_review_ready_pull_request(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
@@ -279,8 +281,6 @@ class RemediationTests(unittest.TestCase):
                         target(mode="pr"),
                         "guiltyspark/app/incident-2",
                         finding,
-                        "pytest passed",
-                        ("src/app.py",),
                     )
 
             body = urlopen.call_args.args[0].data.decode("utf-8")

@@ -115,7 +115,7 @@ class Remediator:
                     )
 
                 branch = self._commit_and_push(workspace, target, finding)
-                pr_url = self._create_pr(target, branch, finding, validation, changed_files)
+                pr_url = self._create_pr(target, branch, finding)
                 return RemediationResult(
                     "pr-opened",
                     validation,
@@ -263,8 +263,6 @@ class Remediator:
         target: Target,
         branch: str,
         finding: Finding,
-        validation: str,
-        changed_files: tuple[str, ...],
     ) -> str:
         token = self._github_token(required=True)
         body = {
@@ -272,7 +270,7 @@ class Remediator:
             "head": branch,
             "base": target.base_branch,
             "draft": target.mode == "draft-pr",
-            "body": self._pr_body(finding, validation, changed_files),
+            "body": self._pr_body(finding),
         }
         request = urllib.request.Request(
             f"{self.settings.github_api_url}/repos/{target.github_repo}/pulls",
@@ -299,11 +297,8 @@ class Remediator:
         subject = CONVENTIONAL_TITLE.sub("", subject).strip()
         return f"fix: {subject or 'remediate production incident'}"
 
-    def _pr_body(
-        self, finding: Finding, validation: str, changed_files: tuple[str, ...]
-    ) -> str:
+    def _pr_body(self, finding: Finding) -> str:
         evidence = "\n".join(f"- {self._redact(item)}" for item in finding.evidence)
-        files = "\n".join(f"- `{path}`" for path in changed_files)
         return (
             "## Containment Record\n\n"
             "Reclaimer, an operational anomaly was detected and classified. I have "
@@ -316,15 +311,8 @@ class Remediator:
             "## Causal Assessment\n\n"
             "The most probable source of the malfunction is as follows:\n\n"
             f"{self._redact(finding.suspected_cause)}\n\n"
-            "## Corrective Protocol\n\n"
-            "The following repository artifacts required adjustment:\n\n"
-            f"{files}\n\n"
-            "## Verification Sequence\n\n"
-            "Naturally, no corrective action should be presented without validation. "
-            "The prescribed test sequence completed with this result:\n\n"
-            f"```text\n{self._redact(validation[-6000:])}\n```\n\n"
-            "All automated safeguards under my control have been satisfied. Final "
-            "authorization remains yours, Reclaimer.\n\n"
+            "The anomaly has been contained in the proposed changes. Final authorization "
+            "remains yours, Reclaimer.\n\n"
             f"Incident designation: `{finding.fingerprint}`\n"
         )
 
