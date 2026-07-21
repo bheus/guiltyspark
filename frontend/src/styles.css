@@ -301,6 +301,10 @@ h2 {
   gap: 20px;
 }
 
+/* Let 1fr tracks shrink below their content's min-content width so a long,
+   unbreakable evidence line can't balloon a column and push the page sideways. */
+.columns > * { min-width: 0; }
+
 @media (max-width: 860px) {
   .columns { grid-template-columns: 1fr; }
 }
@@ -510,7 +514,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   padding-left: 10px;
 }
 
-.inc-samples div { white-space: pre; padding: 1px 0; }
+.inc-samples div { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1px 0; }
 
 /* ---- codex-clustered groups ---- */
 
