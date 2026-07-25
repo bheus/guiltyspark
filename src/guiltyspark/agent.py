@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import tempfile
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
+from guiltyspark.codex import execute_codex
 from guiltyspark.config import Settings
 from guiltyspark.models import Finding, Incident
 from guiltyspark.targets import Target
@@ -101,54 +98,13 @@ class Analyzer:
 
 
 def _run_codex(settings: Settings, prompt: str) -> list[Finding]:
-    if not settings.codex_workdir.exists():
-        raise RuntimeError(f"GUILTYSPARK_CODEX_WORKDIR does not exist: {settings.codex_workdir}")
-
-    with tempfile.NamedTemporaryFile("w+", encoding="utf-8", suffix=".txt", delete=False) as output:
-        output_path = Path(output.name)
-
-    command = [
-        settings.codex_path,
-        "exec",
-        "--cd",
-        str(settings.codex_workdir),
-        "--sandbox",
-        "read-only" if settings.pr_mode in {"off", "plan"} else "workspace-write",
-        "--skip-git-repo-check",
-        "--output-last-message",
-        str(output_path),
-    ]
-    if settings.analysis_model_name:
-        command.extend(["--model", settings.analysis_model_name])
-    command.append("-")
-
-    env = os.environ.copy()
-    secret_markers = ("AUTH", "CREDENTIAL", "KEY", "PASSWORD", "SECRET", "TOKEN", "WEBHOOK")
-    for name in list(env):
-        if name == settings.github_token_env or any(
-            marker in name.upper() for marker in secret_markers
-        ):
-            env.pop(name, None)
-    env["CODEX_HOME"] = str(settings.codex_home)
-
-    try:
-        completed = subprocess.run(
-            command,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=settings.codex_timeout_seconds,
-            check=False,
-            env=env,
-        )
-        if completed.returncode != 0:
-            details = (completed.stderr or completed.stdout).strip()
-            raise RuntimeError(f"codex exec failed with exit {completed.returncode}: {details}")
-        output_text = output_path.read_text(encoding="utf-8")
-        payload = _extract_json(output_text)
-        return [_finding_from_payload(item) for item in payload.get("findings", [])]
-    finally:
-        output_path.unlink(missing_ok=True)
+    output_text = execute_codex(
+        settings,
+        prompt,
+        sandbox="read-only" if settings.pr_mode in {"off", "plan"} else "workspace-write",
+    )
+    payload = _extract_json(output_text)
+    return [_finding_from_payload(item) for item in payload.get("findings", [])]
 
 
 def _extract_json(text: str) -> dict[str, Any]:
