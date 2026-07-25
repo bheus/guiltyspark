@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from guiltyspark.clustering import AnomalyGroup, cluster_incidents, propose_pattern
+from guiltyspark.codex import transport_readiness
 from guiltyspark.config import Settings
 from guiltyspark.github_pr import PrStatusClient
 from guiltyspark.grouping import group_incidents
@@ -736,6 +737,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/overview":
                 self._send_json(self.service.overview())
+            elif parsed.path == "/api/readiness":
+                readiness = transport_readiness()
+                self._send_json(readiness, status=200 if readiness["ready"] else 503)
             elif parsed.path == "/api/findings":
                 self._send_json(
                     self.service.findings(
