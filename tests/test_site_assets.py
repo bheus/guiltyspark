@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 
@@ -21,3 +22,17 @@ def test_site_icons_are_valid_png_assets():
         b"\x89PNG\r\n\x1a\n"
     )
     assert (SITE / "favicon.ico").read_bytes().startswith(b"\x00\x00\x01\x00")
+
+
+def test_site_publishes_security_txt_with_required_fields():
+    security_txt = SITE / ".well-known" / "security.txt"
+    assert security_txt.is_file()
+
+    fields = {
+        line.split(":", 1)[0]: line.split(":", 1)[1].strip()
+        for line in security_txt.read_text().splitlines()
+        if line and not line.startswith("#")
+    }
+
+    assert fields["Contact"].startswith("https://")
+    assert datetime.fromisoformat(fields["Expires"].replace("Z", "+00:00")).tzinfo
