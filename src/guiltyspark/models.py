@@ -8,6 +8,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+# Timestamps must be collapsed as whole tokens, before the generic number pass
+# below — which cannot do it. In `2026-07-25t13:00:23` the `T` separator is a word
+# character, so `25` has no trailing \b and `13` has no leading \b: both survive
+# as the literal `25t13`. Any service that logs a timestamp inside the message
+# body (a structured JSON logger, say) therefore got a *different* fingerprint
+# every hour and every day, which silently defeated finding dedup and made
+# fingerprint-keyed ignore rules expire on their own. Seconds are optional and a
+# bare wall-clock time is matched too, since loggers print both.
+TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}(?::\d{2})?(?:[.,]\d+)?(?:z|[+-]\d{2}:?\d{2})?"
+    r"|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?",
+    re.IGNORECASE,
+)
 NOISE_WORDS = re.compile(
     r"([a-f0-9]{8,}|[0-9a-f]{4,}-[0-9a-f-]{12,}|\b\d+\b|0x[a-f0-9]+)",
     re.IGNORECASE,
@@ -136,7 +149,8 @@ class Finding:
 
 
 def normalize_line(line: str) -> str:
-    normalized = NOISE_WORDS.sub("<var>", line.strip().lower())
+    normalized = TIMESTAMP.sub("<ts>", line.strip().lower())
+    normalized = NOISE_WORDS.sub("<var>", normalized)
     return WHITESPACE.sub(" ", normalized)
 
 
