@@ -15,6 +15,7 @@ from guiltyspark.dashboard import (
     ANOMALY_LINE_PATTERN,
     DashboardService,
     _containers_param,
+    _DECLARED_NON_ANOMALY_PATTERN,
     _merge_events,
     anomaly_queries,
     make_server,
@@ -155,8 +156,8 @@ class TestAnomalyQueries:
     def test_covers_both_line_and_label_severity_rules(self):
         queries = anomaly_queries('{job=~".+"}')
         assert queries == [
-            '{job=~".+"} |~ "(?i)(panic|fatal|error|exception|traceback)" '
-            '!~ "(?i)(^|\\\\s)(level|severity|lvl)=\\"?(trace|debug|info|warn|warning)\\\\b"',
+            f'{{job=~".+"}} |~ {json.dumps(ANOMALY_LINE_PATTERN)} '
+            f"!~ {json.dumps(_DECLARED_NON_ANOMALY_PATTERN)}",
             '{job=~".+", level=~"(?i)^(error|fatal)$"}',
             '{job=~".+", severity=~"(?i)^(error|fatal)$"}',
         ]
@@ -165,7 +166,28 @@ class TestAnomalyQueries:
         # Without this, Loki's own info-level log of the query below matches the
         # query's keywords, so polling the dashboard manufactures anomalies.
         keyword_query = anomaly_queries('{job=~".+"}')[0]
-        assert '!~ "(?i)(^|\\\\s)(level|severity|lvl)=' in keyword_query
+        assert f"!~ {json.dumps(_DECLARED_NON_ANOMALY_PATTERN)}" in keyword_query
+
+    def test_prefilter_drops_the_lines_log_event_level_would_call_benign(self):
+        # The prefilter exists to avoid fetching lines LogEvent.level will
+        # discard, so it must recognize every serialization LogEvent.level does.
+        pattern = re.compile(_DECLARED_NON_ANOMALY_PATTERN)
+        for line in [
+            'level=info msg="error saving"',
+            '{"level": "INFO", "message": "fetch complete (0 errors)"}',
+            '{"levelname":"INFO","msg":"error saving"}',
+        ]:
+            assert LogEvent(ts_ns=1, labels={}, line=line).level not in ANOMALY_LEVELS
+            assert pattern.search(line), line
+
+    def test_prefilter_keeps_lines_that_declare_an_anomaly(self):
+        pattern = re.compile(_DECLARED_NON_ANOMALY_PATTERN)
+        for line in [
+            'level=error msg="upstream refused"',
+            '{"level": "ERROR", "message": "upstream refused"}',
+        ]:
+            assert LogEvent(ts_ns=1, labels={}, line=line).level in ANOMALY_LEVELS
+            assert not pattern.search(line), line
 
     def test_a_served_query_log_is_not_an_anomaly(self):
         # End to end over the loop's actual shape: Loki logs the query text at
