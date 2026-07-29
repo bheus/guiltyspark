@@ -40,9 +40,14 @@ ANOMALY_LEVELS = {"error", "fatal"}
 # over-match on purpose (LogEvent.level still has the final say) — missing a
 # real anomaly is far worse than fetching a line we then discard.
 ANOMALY_LINE_PATTERN = "(?i)(panic|fatal|error|exception|traceback)"
-# Lines that declare a non-anomaly level in logfmt: LogEvent.level believes the
-# declaration over any keyword in the text, so there is no point fetching them.
-_DECLARED_NON_ANOMALY_PATTERN = "(?i)(^|\\s)(level|severity|lvl)=\"?(trace|debug|info|warn|warning)\\b"
+# Lines that declare a non-anomaly level, in logfmt or JSON: LogEvent.level
+# believes the declaration over any keyword in the text, so there is no point
+# fetching them. Must track DECLARED_LEVEL in models.py — a serialization this
+# misses is one we pay to fetch and then discard.
+_DECLARED_NON_ANOMALY_PATTERN = (
+    "(?i)((^|\\s)(level|levelname|severity|lvl)=\"?(trace|debug|info|warn|warning)\\b"
+    "|\"(level|levelname|severity|lvl)\"\\s*:\\s*\"(trace|debug|info|warn|warning)\")"
+)
 _ANOMALY_LEVEL_PATTERN = "(?i)^(error|fatal)$"
 _SEVERITY_LABELS = ("level", "severity")
 TIMELINE_BINS = 60

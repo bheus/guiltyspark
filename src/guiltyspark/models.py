@@ -26,12 +26,17 @@ NOISE_WORDS = re.compile(
     re.IGNORECASE,
 )
 WHITESPACE = re.compile(r"\s+")
-# A logfmt `level=`/`severity=` field a logger wrote about itself. Trusted over
-# the keyword scan below, which cannot tell a line reporting an error from one
-# merely containing the word — an info line that quotes an error string (Loki
-# logging the text of a query, say) is not an anomaly.
-LOGFMT_LEVEL = re.compile(
-    r"(?:^|\s)(?:level|severity|lvl)=\"?(trace|debug|info|warn|warning|error|fatal|panic|critical)\b",
+# A `level`/`severity` field a logger wrote about itself, in either of the two
+# serializations we see: logfmt (`level=info`) and JSON (`"level": "INFO"`).
+# Trusted over the keyword scan below, which cannot tell a line reporting an
+# error from one merely containing the word — an info line that quotes an error
+# string (Loki logging the text of a query, or a job reporting "(0 errors)") is
+# not an anomaly.
+_LEVEL_NAMES = r"trace|debug|info|warn|warning|error|fatal|panic|critical"
+_LEVEL_KEYS = r"level|levelname|severity|lvl"
+DECLARED_LEVEL = re.compile(
+    rf"(?:^|\s)(?:{_LEVEL_KEYS})=\"?({_LEVEL_NAMES})\b"
+    rf"|\"(?:{_LEVEL_KEYS})\"\s*:\s*\"({_LEVEL_NAMES})\"",
     re.IGNORECASE,
 )
 
@@ -78,9 +83,10 @@ class LogEvent:
         explicit = self.labels.get("level") or self.labels.get("severity")
         if explicit:
             return _normalize_level(explicit)
-        declared = LOGFMT_LEVEL.search(self.line)
+        declared = DECLARED_LEVEL.search(self.line)
         if declared:
-            return _normalize_level(declared.group(1))
+            # One group per serialization; exactly one of them matched.
+            return _normalize_level(declared.group(1) or declared.group(2))
         lowered = self.line.lower()
         if "panic" in lowered or "fatal" in lowered:
             return "fatal"
