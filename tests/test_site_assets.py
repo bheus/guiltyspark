@@ -5,6 +5,23 @@ from pathlib import Path
 SITE = Path(__file__).parents[1] / "site"
 
 
+def test_site_denies_dotfiles_without_error_logging():
+    nginx_conf = (SITE / "nginx.conf").read_text()
+
+    assert "location ~ /\\.(?!well-known(?:/|$))" in nginx_conf
+    assert "access_log off;" in nginx_conf
+    assert "log_not_found off;" in nginx_conf
+    assert "return 404;" in nginx_conf
+    assert "COPY nginx.conf /etc/nginx/conf.d/default.conf" in (SITE / "Dockerfile").read_text()
+
+
+def test_site_preserves_well_known_exception():
+    nginx_conf = (SITE / "nginx.conf").read_text()
+
+    assert "well-known(?:/|$)" in nginx_conf
+    assert (SITE / ".well-known" / "security.txt").is_file()
+
+
 def test_site_declares_and_contains_browser_icons():
     index = (SITE / "index.html").read_text()
 
