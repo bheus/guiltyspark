@@ -105,8 +105,8 @@ All settings are environment variables. The most important ones are:
 | `GUILTYSPARK_NOTIFY_EMAIL_FROM` | Verified Resend sender address for PR-opened emails. |
 | `GUILTYSPARK_NOTIFY_EMAIL_TO` | Recipient address for PR-opened emails. |
 | `GUILTYSPARK_MODEL` | Backward-compatible default model for every `codex exec` call. The use-specific settings below take precedence. Unset uses the Codex CLI default. |
-| `GUILTYSPARK_ANALYSIS_MODEL` | Model for diagnosis, anomaly clustering, issue deduplication, and planning. Falls back to `GUILTYSPARK_MODEL`, then the Codex CLI default. |
-| `GUILTYSPARK_REMEDIATION_MODEL` | Model for repository-writing code fixes. Falls back to `GUILTYSPARK_MODEL`, then the Codex CLI default. The Docker Compose scaffold defaults this to `gpt-5.6-luna`. |
+| `GUILTYSPARK_ANALYSIS_MODEL` | Model for diagnosis, anomaly clustering, issue deduplication, and planning. Falls back to `GUILTYSPARK_MODEL`, then the Codex CLI default. The Docker Compose scaffold defaults this to `gpt-5.6-terra`. |
+| `GUILTYSPARK_REMEDIATION_MODEL` | Model for repository-writing code fixes. Falls back to `GUILTYSPARK_MODEL`, then the Codex CLI default. The Docker Compose scaffold defaults this to `gpt-5.6-sol`. |
 | `GUILTYSPARK_CODEX_PATH` | Codex CLI binary. Defaults to `codex`. |
 | `GUILTYSPARK_CODEX_WORKDIR` | Local repo/config checkout Codex may inspect. |
 | `GUILTYSPARK_CODEX_TIMEOUT_SECONDS` | Timeout for a single Codex invocation. Defaults to `600`. |
