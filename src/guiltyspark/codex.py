@@ -27,7 +27,8 @@ _TRANSPORT_LOCK = threading.Lock()
 _transport_ready = True
 _transport_error: str | None = None
 _MAX_ATTEMPTS = 4
-_BACKOFF_CAP_SECONDS = 8.0
+_BACKOFF_BASE_SECONDS = 1.0
+_BACKOFF_CAP_SECONDS = 30.0
 
 
 def transport_readiness() -> dict[str, object]:
@@ -43,9 +44,18 @@ def transport_readiness() -> dict[str, object]:
 def _is_transient_transport_failure(details: str) -> bool:
     lowered = details.lower()
     return (
-        "http 503" in lowered
+        "http 502" in lowered
+        or "http 503" in lowered
+        or "http 504" in lowered
+        or "http 429" in lowered
         or "circuit open" in lowered
         or "circuit_open" in lowered
+        or "transport channel closed" in lowered
+        or "error sending request" in lowered
+        or "connection refused" in lowered
+        or "connection reset" in lowered
+        or "timed out" in lowered
+        or "network is unreachable" in lowered
     )
 
 
@@ -103,8 +113,13 @@ def execute_codex(settings: Settings, prompt: str, *, sandbox: str = "read-only"
                     raise RuntimeError(
                         f"codex exec failed with exit {completed.returncode}: {details}"
                     )
-                delay = min(_BACKOFF_CAP_SECONDS, 2**attempt)
-                time.sleep(random.uniform(0, delay))
+                delay = min(
+                    _BACKOFF_CAP_SECONDS,
+                    _BACKOFF_BASE_SECONDS * (2**attempt),
+                )
+                # Keep jitter within the lower half of each exponential step so
+                # a later retry cannot randomly happen sooner than its predecessor.
+                time.sleep(random.uniform(delay / 2, delay))
     finally:
         output_path.unlink(missing_ok=True)
 

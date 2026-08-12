@@ -56,19 +56,42 @@ def test_non_503_client_error_remains_terminal(monkeypatch, tmp_path):
 
 def test_exhausted_transient_retries_report_degraded_readiness(monkeypatch, tmp_path):
     calls = []
+    delays = []
 
     def run(_command, **_kwargs):
         calls.append(True)
-        return _result(1, "HTTP 503: Service Unavailable")
+        return _result(
+            1,
+            "worker quit with fatal: Transport channel closed, when Client "
+            '(HttpRequest(HttpRequest("http/request failed")))',
+        )
 
     monkeypatch.setattr(codex.subprocess, "run", run)
     monkeypatch.setattr(codex.random, "uniform", lambda _low, _high: 0)
-    monkeypatch.setattr(codex.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(codex.time, "sleep", delays.append)
 
-    with pytest.raises(RuntimeError, match="HTTP 503"):
+    with pytest.raises(RuntimeError, match="Transport channel closed"):
         codex.execute_codex(_settings(tmp_path), "prompt")
     assert len(calls) == 4
+    assert delays == [0, 0, 0]
     readiness = codex.transport_readiness()
     assert readiness["ready"] is False
     assert readiness["degraded"] is True
-    assert "HTTP 503" in readiness["error"]
+    assert "Transport channel closed" in readiness["error"]
+
+
+def test_transport_retries_use_increasing_jittered_backoff(monkeypatch, tmp_path):
+    delays = []
+
+    monkeypatch.setattr(
+        codex.subprocess,
+        "run",
+        lambda _command, **_kwargs: _result(1, "error sending request"),
+    )
+    monkeypatch.setattr(codex.random, "uniform", lambda _low, high: high)
+    monkeypatch.setattr(codex.time, "sleep", delays.append)
+
+    with pytest.raises(RuntimeError, match="error sending request"):
+        codex.execute_codex(_settings(tmp_path), "prompt")
+
+    assert delays == [1.0, 2.0, 4.0]
