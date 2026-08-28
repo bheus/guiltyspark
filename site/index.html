@@ -7,12 +7,14 @@
 <meta name="description" content="guiltyspark is a self-hosted AI agent that watches your Loki logs, diagnoses the bug, writes the fix and its regression tests, and opens a pull request for your review. Open source, runs on a Raspberry Pi.">
 <link rel="canonical" href="https://guiltyspark.builtbybrendan.com/">
 <meta name="robots" content="index, follow">
+<meta name="author" content="Brendan Heussler">
 <meta name="theme-color" content="#060b12">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://guiltyspark.builtbybrendan.com/">
 <meta property="og:title" content="It Finds the Bug and Writes the Fix | guiltyspark">
 <meta property="og:description" content="Most monitoring tells you something broke. guiltyspark watches your logs, diagnoses the cause, writes the fix and its tests, and hands you a pull request to review.">
 <meta property="og:site_name" content="guiltyspark">
+<meta property="og:locale" content="en_US">
 <meta property="og:image" content="https://guiltyspark.builtbybrendan.com/social-preview.png">
 <meta property="og:image:secure_url" content="https://guiltyspark.builtbybrendan.com/social-preview.png">
 <meta property="og:image:type" content="image/png">
@@ -45,7 +47,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "AI-native observability and incident remediation",
       "operatingSystem": "Linux, Docker",
-      "softwareVersion": "0.19.1",
+      "softwareVersion": "0.23.7",
       "license": "https://www.apache.org/licenses/LICENSE-2.0",
       "url": "https://guiltyspark.builtbybrendan.com/",
       "image": "https://guiltyspark.builtbybrendan.com/social-preview.png",
@@ -70,34 +72,50 @@
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "What does guiltyspark actually produce?",
+          "name": "Does it change production code on its own?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "A pull request. It detects an anomaly in your Loki logs, diagnoses the likely cause, writes a minimal fix plus regression tests in an isolated clone, runs your test suite, and opens a PR that explains the evidence and the reasoning. You review and merge."
+            "text": "No. Every target starts in observe, where nothing is cloned or written. It pushes only from repos you deliberately promoted to draft-pr or pr — and even then it opens a pull request. Merging is a human action, always."
           }
         },
         {
           "@type": "Question",
-          "name": "How is that different from an AI log summarizer?",
+          "name": "What if the fix is wrong?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "A log summarizer explains text you paste into it and stops there. guiltyspark runs continuously, suppresses noise it has already seen, maps each incident to its source repository, writes and validates corrective code, and can open a pull request at the autonomy level you configure."
+            "text": "Then you close the PR — that's the whole point of ending at review. Wrong patches also have to survive your test suite and patch policy first, so the common failure isn't a bad merge, it's an attempt that dies in the clone and you never hear about."
           }
         },
         {
           "@type": "Question",
-          "name": "Does guiltyspark automatically change production code?",
+          "name": "How is this different from an AI log summarizer?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. Every target starts in observe mode, where nothing is cloned or changed. Code is pushed only when you explicitly configure that target for draft-pr or pr mode, and only after path limits, change limits, and required tests pass in an isolated clone. A pull request still needs your approval to merge."
+            "text": "A summarizer explains text you paste in and stops. This runs on its own, remembers what it has already ruled on, knows which repo each service comes from, writes and validates real code, and finishes with a pull request. The summary was never the hard part."
           }
         },
         {
           "@type": "Question",
-          "name": "What does it need to run?",
+          "name": "What do I need to run it?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Docker, a Grafana Loki instance to read logs from, and a Codex session authenticated with your ChatGPT account. It is self-hosted and runs on any always-on machine you already own, including a Raspberry Pi."
+            "text": "Docker, a Loki instance to read from, and a Codex session signed in with your ChatGPT account. It's happy on any always-on box you already own — the arm64 image exists because it was built to live on a Raspberry Pi."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will it flood me with pull requests?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It dedups on the underlying issue rather than the log line, remediates one representative per run, won't re-file while a PR is open, and waits out a cooldown after merge. Noise you silence stays silenced."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does it talk like that?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "343 Guilty Spark is the endlessly polite AI caretaker from Halo, left alone for millennia to monitor an installation and quite certain he's being helpful. It seemed like the right voice for something that watches your logs while you sleep. You can ignore the reference entirely — the pull requests still make sense."
           }
         }
       ]
@@ -118,6 +136,9 @@
   @keyframes gs-eye { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.84); opacity: 0.82; } 92% { transform: scale(1.05); } }
   @keyframes gs-halo { 0%,100% { opacity: 0.55; } 50% { opacity: 0.9; } }
   @media (prefers-reduced-motion: reduce) { .gs-anim { animation: none !important; } }
+  .gs-skip { position:absolute; left:-9999px; top:0; z-index:100; padding:10px 18px; background:#5fd4f4; color:#060b12; font-family:'Saira Condensed',sans-serif; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; }
+  .gs-skip:focus { left:0; }
+  .gs-terminal .gs-cmd::before { content: '$ '; color: #4e6378; }
   @media (max-width: 880px) { .gs-split { grid-template-columns: 1fr !important; } .gs-nav-links { display: none !important; } .gs-nav-cta { margin-left: auto; } }
   .gs-verification-list { display: flex; flex-direction: column; gap: 7px; }
   .gs-verification-row { display: flex; align-items: baseline; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #a7bccd; }
@@ -131,27 +152,30 @@
 </style>
 </head>
 <body>
+<a class="gs-skip" href="#content">Skip to content</a>
 <div style="width:100%; background:#060b12; background-image: radial-gradient(ellipse 70% 46% at 50% -6%, rgba(95,212,244,0.10), transparent 70%); color:#d8e6f2; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:15px; line-height:1.55; overflow:hidden;">
 
   <!-- NAV -->
-  <nav style="position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:18px; padding:14px 32px; background:rgba(6,11,18,0.72); backdrop-filter:blur(10px); border-bottom:1px solid #12202f;">
+  <nav aria-label="Primary" style="position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:18px; padding:14px 32px; background:rgba(6,11,18,0.72); backdrop-filter:blur(10px); border-bottom:1px solid #12202f;">
     <div style="display:flex; align-items:center; gap:12px;">
       <div style="width:26px; height:26px; border-radius:50%; flex:none; background:radial-gradient(circle at 50% 45%, rgba(155,232,255,0.4), transparent 60%), linear-gradient(160deg,#17293c,#0a121d 70%); border:1px solid #1c2e44; display:grid; place-items:center; box-shadow:0 0 14px rgba(95,212,244,0.35);">
         <div style="width:9px; height:9px; border-radius:50%; background:radial-gradient(circle at 45% 40%, #fff, #9be8ff 35%, #5fd4f4 60%, #1a5d75 100%); box-shadow:0 0 8px #5fd4f4;"></div>
       </div>
       <span style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; letter-spacing:0.04em; color:#d8e6f2;">guiltyspark</span>
-      <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#4e6378; border:1px solid #12202f; padding:2px 8px;">v0.19</span>
+      <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#4e6378; border:1px solid #12202f; padding:2px 8px;">v0.23</span>
     </div>
-    <div class="gs-nav-links" style="margin-left:auto; display:flex; align-items:center; gap:26px; font-family:'Saira Condensed',sans-serif; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; color:#7c93ab;">
-      <a href="#fix" style="color:inherit;">The fix</a>
-      <a href="#loop" style="color:inherit;">How</a>
-      <a href="#modes" style="color:inherit;">Autonomy</a>
-      <a href="#trust" style="color:inherit;">Trust</a>
-      <a href="#console" style="color:inherit;">Console</a>
-      <a href="#start" style="color:inherit;">Quick start</a>
-    </div>
+    <ul class="gs-nav-links" style="margin-left:auto; display:flex; align-items:center; gap:26px; list-style:none; font-family:'Saira Condensed',sans-serif; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; color:#7c93ab;">
+      <li><a href="#fix" style="color:inherit;">The fix</a></li>
+      <li><a href="#loop" style="color:inherit;">How</a></li>
+      <li><a href="#modes" style="color:inherit;">Autonomy</a></li>
+      <li><a href="#trust" style="color:inherit;">Trust</a></li>
+      <li><a href="#console" style="color:inherit;">Console</a></li>
+      <li><a href="#start" style="color:inherit;">Quick start</a></li>
+    </ul>
     <a class="gs-nav-cta" href="https://github.com/bheus/guiltyspark" target="_blank" rel="noopener" style="font-family:'Saira Condensed',sans-serif; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; color:#060b12; background:#5fd4f4; padding:7px 15px; font-weight:700; clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);">GitHub</a>
   </nav>
+
+  <main id="content">
 
   <!-- HERO -->
   <header style="position:relative; max-width:1160px; margin:0 auto; padding:88px 32px 64px; text-align:center;">
@@ -269,28 +293,28 @@
     <p style="font-family:'Saira Condensed',sans-serif; font-size:clamp(26px,3.4vw,38px); font-weight:700; text-transform:uppercase; letter-spacing:0.02em; color:#eaf4fc; margin-bottom:14px;">Detect. Diagnose. Fix. Verify.</p>
     <p style="max-width:68ch; color:#a7bccd; margin-bottom:38px;">The loop is deliberately boring, because boring is auditable. Here's the whole thing, timestamped against the pull request above.</p>
 
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px;">
-      <div style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
+    <ol style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; list-style:none; margin:0; padding:0;">
+      <li style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
         <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#5fd4f4; margin-bottom:10px;">02:14 &nbsp;·&nbsp; DETECT</div>
         <p style="color:#c4d6e5; font-size:14.5px;">Polls Loki on an interval and collapses 612 near-identical lines into a single coherent incident. Noise it has ruled on before never surfaces again.</p>
-      </div>
-      <div style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
+      </li>
+      <li style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
         <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#5fd4f4; margin-bottom:10px;">02:15 &nbsp;·&nbsp; DIAGNOSE</div>
         <p style="color:#c4d6e5; font-size:14.5px;">Hands the evidence to Codex along with the source repo and your notes on which warnings are expected, so benign chatter isn't mistaken for a fault.</p>
-      </div>
-      <div style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
+      </li>
+      <li style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
         <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#5fd4f4; margin-bottom:10px;">02:17 &nbsp;·&nbsp; FIX</div>
         <p style="color:#c4d6e5; font-size:14.5px;">Clones the repository somewhere disposable and writes the smallest change that addresses the cause, plus a test that proves it.</p>
-      </div>
-      <div style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
+      </li>
+      <li style="background:#0b1420; border:1px solid #12202f; border-left:2px solid #1c2e44; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
         <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#5fd4f4; margin-bottom:10px;">02:18 &nbsp;·&nbsp; VERIFY</div>
         <p style="color:#c4d6e5; font-size:14.5px;">Checks the patch against your policy — allowed paths, file count — then runs your real test suite. A failure here ends the attempt quietly.</p>
-      </div>
-      <div style="background:linear-gradient(155deg,#0d1826,#0b1420); border:1px solid #14324a; border-left:2px solid #5fd4f4; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
+      </li>
+      <li style="background:linear-gradient(155deg,#0d1826,#0b1420); border:1px solid #14324a; border-left:2px solid #5fd4f4; padding:22px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);">
         <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#5fd4f4; margin-bottom:10px;">02:19 &nbsp;·&nbsp; HAND OFF</div>
         <p style="color:#c4d6e5; font-size:14.5px;">Opens the pull request and stops. It will not reopen this issue while your PR is still sitting there, and it stays quiet for a cooldown after you merge.</p>
-      </div>
-    </div>
+      </li>
+    </ol>
   </section>
 
   <!-- MODES -->
@@ -298,12 +322,12 @@
     <h2 style="font-family:'Saira Condensed',sans-serif; font-size:15px; font-weight:600; letter-spacing:0.26em; text-transform:uppercase; color:#5fd4f4; margin-bottom:8px;">Progressive autonomy</h2>
     <p style="font-family:'Saira Condensed',sans-serif; font-size:clamp(26px,3.4vw,38px); font-weight:700; text-transform:uppercase; letter-spacing:0.02em; color:#eaf4fc; margin-bottom:14px;">An agent that writes code should have to earn it.</p>
     <p style="max-width:66ch; color:#a7bccd; margin-bottom:38px;">So it starts with nothing. Every repository begins in <strong style="color:#d8e6f2;">observe</strong>, where it can look and reason but not touch. Watch its diagnoses for a while; promote it only once you believe them. It cannot push code unless you have explicitly moved that target to <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">draft-pr</code> or <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">pr</code>, one repo at a time.</p>
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px;">
-      <div style="background:#0b1420; border:1px solid #12202f; border-top:2px solid #43b36a; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#43b36a; margin-bottom:6px;">Default</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">observe</h3><p style="color:#a7bccd; font-size:14px;">Detect and diagnose only. Nothing is cloned, nothing is written. Read the findings and judge them.</p></div>
-      <div style="background:#0b1420; border:1px solid #12202f; border-top:2px solid #d9ae3b; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#d9ae3b; margin-bottom:6px;">Then</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">fix</h3><p style="color:#a7bccd; font-size:14px;">It writes the patch and validates it in an isolated clone — but nothing leaves that clone. Fixes without consequences.</p></div>
-      <div style="background:#0b1420; border:1px solid #12202f; border-top:2px solid #e8853c; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#e8853c; margin-bottom:6px;">Then</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">draft-pr</h3><p style="color:#a7bccd; font-size:14px;">Same checks, then it pushes a branch and opens a draft. Visible to your team, mergeable by nobody until you say so.</p></div>
-      <div style="background:linear-gradient(155deg,#0d1826,#0b1420); border:1px solid #14324a; border-top:2px solid #e8505b; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#e8505b; margin-bottom:6px;">Once you trust it</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">pr</h3><p style="color:#a7bccd; font-size:14px;">A review-ready pull request, like the one above. It still ends at your approval — that line never moves.</p></div>
-    </div>
+    <ul style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; list-style:none; margin:0; padding:0;">
+      <li style="background:#0b1420; border:1px solid #12202f; border-top:2px solid #43b36a; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#43b36a; margin-bottom:6px;">Default</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">observe</h3><p style="color:#a7bccd; font-size:14px;">Detect and diagnose only. Nothing is cloned, nothing is written. Read the findings and judge them.</p></li>
+      <li style="background:#0b1420; border:1px solid #12202f; border-top:2px solid #d9ae3b; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#d9ae3b; margin-bottom:6px;">Then</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">fix</h3><p style="color:#a7bccd; font-size:14px;">It writes the patch and validates it in an isolated clone — but nothing leaves that clone. Fixes without consequences.</p></li>
+      <li style="background:#0b1420; border:1px solid #12202f; border-top:2px solid #e8853c; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#e8853c; margin-bottom:6px;">Then</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">draft-pr</h3><p style="color:#a7bccd; font-size:14px;">Same checks, then it pushes a branch and opens a draft. Visible to your team, mergeable by nobody until you say so.</p></li>
+      <li style="background:linear-gradient(155deg,#0d1826,#0b1420); border:1px solid #14324a; border-top:2px solid #e8505b; padding:24px; clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);"><div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#e8505b; margin-bottom:6px;">Once you trust it</div><h3 style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:#eaf4fc; margin-bottom:10px;">pr</h3><p style="color:#a7bccd; font-size:14px;">A review-ready pull request, like the one above. It still ends at your approval — that line never moves.</p></li>
+    </ul>
   </section>
 
   <!-- TRUST -->
@@ -311,14 +335,14 @@
     <h2 style="font-family:'Saira Condensed',sans-serif; font-size:15px; font-weight:600; letter-spacing:0.26em; text-transform:uppercase; color:#5fd4f4; margin-bottom:8px;">Built for trust</h2>
     <p style="font-family:'Saira Condensed',sans-serif; font-size:clamp(26px,3.4vw,38px); font-weight:700; text-transform:uppercase; letter-spacing:0.02em; color:#eaf4fc; margin-bottom:14px;">The fences that make this safe.</p>
     <p style="max-width:68ch; color:#a7bccd; margin-bottom:38px;">Letting an AI agent write to your repositories is only reasonable if it's boxed in properly. Here's the box.</p>
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px;">
-      <div style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">The AI never holds the keys</h3><p style="color:#a7bccd; font-size:14.5px;">Install a GitHub App scoped to only your target repos. guiltyspark mints short-lived tokens for its own Git operations — <strong style="color:#d8e6f2;">Codex never receives credentials</strong>, so a bad model day can't become a bad security day.</p></div>
-      <div style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">Patches stay in their lane</h3><p style="color:#a7bccd; font-size:14.5px;">Per-target allowed paths, a cap on files changed, and required test commands. All of it enforced in a short-lived clone that's thrown away either way.</p></div>
-      <div style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">Rehearse before you commit</h3><p style="color:#a7bccd; font-size:14.5px;"><code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">guiltyspark replay</code> re-runs a captured incident against a local checkout, so you can watch it work a real bug before granting it push access to anything.</p></div>
-      <div style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">One issue, one PR</h3><p style="color:#a7bccd; font-size:14.5px;">It dedups on the underlying problem, not the exact log line. An issue with an open PR is never re-filed, and a configurable cooldown keeps it quiet after merge. It won't bury you.</p></div>
-      <div style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">No API key required</h3><p style="color:#a7bccd; font-size:14.5px;">Runs on a ChatGPT-authenticated Codex session, so your existing plan covers it rather than a separately billed OpenAI key. Known problems short-circuit from the local store — a model call is spent only on something genuinely new.</p></div>
-      <div style="background:linear-gradient(155deg,#0d1826,#0b1420); border:1px solid #14324a; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#9be8ff; margin-bottom:10px;">Yours to run and audit</h3><p style="color:#a7bccd; font-size:14.5px;">Apache-2.0, self-hosted, no vendor telemetry. A native arm64 image means the whole loop can live on a Raspberry Pi in your house, on infrastructure you control.</p></div>
-    </div>
+    <ul style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; list-style:none; margin:0; padding:0;">
+      <li style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">The AI never holds the keys</h3><p style="color:#a7bccd; font-size:14.5px;">Install a GitHub App scoped to only your target repos. guiltyspark mints short-lived tokens for its own Git operations — <strong style="color:#d8e6f2;">Codex never receives credentials</strong>, so a bad model day can't become a bad security day.</p></li>
+      <li style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">Patches stay in their lane</h3><p style="color:#a7bccd; font-size:14.5px;">Per-target allowed paths, a cap on files changed, and required test commands. All of it enforced in a short-lived clone that's thrown away either way.</p></li>
+      <li style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">Rehearse before you commit</h3><p style="color:#a7bccd; font-size:14.5px;"><code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">guiltyspark replay</code> re-runs a captured incident against a local checkout, so you can watch it work a real bug before granting it push access to anything.</p></li>
+      <li style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">One issue, one PR</h3><p style="color:#a7bccd; font-size:14.5px;">It dedups on the underlying problem, not the exact log line. An issue with an open PR is never re-filed, and a configurable cooldown keeps it quiet after merge. It won't bury you.</p></li>
+      <li style="background:#0b1420; border:1px solid #12202f; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#eaf4fc; margin-bottom:10px;">No API key required</h3><p style="color:#a7bccd; font-size:14.5px;">Runs on a ChatGPT-authenticated Codex session, so your existing plan covers it rather than a separately billed OpenAI key. Known problems short-circuit from the local store — a model call is spent only on something genuinely new.</p></li>
+      <li style="background:linear-gradient(155deg,#0d1826,#0b1420); border:1px solid #14324a; padding:26px; clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);"><h3 style="font-family:'Saira Condensed',sans-serif; font-size:20px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#9be8ff; margin-bottom:10px;">Yours to run and audit</h3><p style="color:#a7bccd; font-size:14.5px;">Apache-2.0, self-hosted, no vendor telemetry. A native arm64 image means the whole loop can live on a Raspberry Pi in your house, on infrastructure you control.</p></li>
+    </ul>
   </section>
 
   <!-- CONSOLE -->
@@ -396,21 +420,19 @@
     <p style="font-family:'Saira Condensed',sans-serif; font-size:clamp(26px,3.4vw,38px); font-weight:700; text-transform:uppercase; letter-spacing:0.02em; color:#eaf4fc; margin-bottom:14px;">Four commands, then leave it alone.</p>
     <p style="max-width:66ch; color:#a7bccd; margin-bottom:34px;">It comes up in <code style="font-family:'JetBrains Mono',monospace; color:#9be8ff;">observe</code> mode, so this is a safe thing to point at a real repository on a Tuesday afternoon.</p>
     <div class="gs-split" style="display:grid; grid-template-columns:1.3fr 1fr; gap:16px; align-items:start;">
-      <div style="background:#0a0f17; border:1px solid #12202f; padding:22px 24px; clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px); font-family:'JetBrains Mono',monospace; font-size:13px; line-height:2; overflow-x:auto;">
-        <div style="color:#4e6378;"># configure targets, then:</div>
-        <div><span style="color:#4e6378;">$</span> <span style="color:#d8e6f2;">cp .env.example .env</span></div>
-        <div><span style="color:#4e6378;">$</span> <span style="color:#d8e6f2;">docker compose pull</span></div>
-        <div><span style="color:#4e6378;">$</span> <span style="color:#d8e6f2;">docker compose run --rm \</span></div>
-        <div style="padding-left:2ch;"><span style="color:#9be8ff;">guiltyspark codex login --device-auth</span></div>
-        <div><span style="color:#4e6378;">$</span> <span style="color:#d8e6f2;">docker compose up</span></div>
-      </div>
-      <div style="display:flex; flex-direction:column; gap:12px;">
-        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;">guiltyspark once</div><div style="color:#a7bccd; font-size:13.5px;">Poll Loki once and analyze what's there right now.</div></div>
-        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;">guiltyspark daemon</div><div style="color:#a7bccd; font-size:13.5px;">Run forever, polling on an interval. The normal mode.</div></div>
-        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;">guiltyspark doctor</div><div style="color:#a7bccd; font-size:13.5px;">Check your configuration and connectivity before trusting any of it.</div></div>
-        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;">guiltyspark dashboard</div><div style="color:#a7bccd; font-size:13.5px;">Serve the console on port 8343.</div></div>
-        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;">guiltyspark replay</div><div style="color:#a7bccd; font-size:13.5px;">Re-run a captured incident against a local checkout.</div></div>
-      </div>
+      <pre style="background:#0a0f17; border:1px solid #12202f; padding:22px 24px; clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px); font-family:'JetBrains Mono',monospace; font-size:13px; line-height:2; overflow-x:auto;"><code class="gs-terminal" style="font-family:inherit; color:#d8e6f2;"><span style="color:#4e6378;"># configure targets, then:</span>
+<span class="gs-cmd">cp .env.example .env</span>
+<span class="gs-cmd">docker compose pull</span>
+<span class="gs-cmd">docker compose run --rm \
+  <span style="color:#9be8ff;">guiltyspark codex login --device-auth</span></span>
+<span class="gs-cmd">docker compose up</span></code></pre>
+      <dl style="display:flex; flex-direction:column; gap:12px; margin:0;">
+        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><dt style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;"><code style="font-family:inherit; color:inherit;">guiltyspark once</code></dt><dd style="color:#a7bccd; font-size:13.5px; margin:0;">Poll Loki once and analyze what's there right now.</dd></div>
+        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><dt style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;"><code style="font-family:inherit; color:inherit;">guiltyspark daemon</code></dt><dd style="color:#a7bccd; font-size:13.5px; margin:0;">Run forever, polling on an interval. The normal mode.</dd></div>
+        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><dt style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;"><code style="font-family:inherit; color:inherit;">guiltyspark doctor</code></dt><dd style="color:#a7bccd; font-size:13.5px; margin:0;">Check your configuration and connectivity before trusting any of it.</dd></div>
+        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><dt style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;"><code style="font-family:inherit; color:inherit;">guiltyspark dashboard</code></dt><dd style="color:#a7bccd; font-size:13.5px; margin:0;">Serve the console on port 8343.</dd></div>
+        <div style="background:#0b1420; border:1px solid #12202f; padding:16px 18px;"><dt style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#9be8ff; margin-bottom:4px;"><code style="font-family:inherit; color:inherit;">guiltyspark replay</code></dt><dd style="color:#a7bccd; font-size:13.5px; margin:0;">Re-run a captured incident against a local checkout.</dd></div>
+      </dl>
     </div>
   </section>
 
@@ -427,6 +449,8 @@
       </div>
     </div>
   </section>
+
+  </main>
 
   <!-- FOOTER -->
   <footer style="border-top:1px solid #12202f;">

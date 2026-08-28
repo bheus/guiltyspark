@@ -1,0 +1,63 @@
+# guiltyspark
+
+> A self-hosted AI agent that monitors Grafana Loki logs, diagnoses the root cause
+> of anomalies with Codex, writes a minimal fix plus regression tests in an isolated
+> clone, validates them against your test suite, and opens a pull request for human
+> review. Apache-2.0, runs anywhere Docker runs, including a Raspberry Pi.
+
+guiltyspark differs from log summarizers and alerting tools in that its output is a
+pull request rather than a notification. It runs continuously, suppresses incidents it
+has already ruled on, maps each incident to its source repository, and produces code
+that has passed the repository's own validation before a human ever sees it.
+
+Autonomy is per-repository and opt-in. Every target starts in `observe` mode, where
+nothing is cloned and nothing is written. Code is pushed only from targets explicitly
+promoted to `draft-pr` or `pr` mode, and only after path limits, change-count limits,
+and required test commands pass inside a throwaway clone. Merging is always a human
+action.
+
+## Core loop
+
+1. Query Loki for recent logs.
+2. Group noisy log lines into incidents.
+3. Ask Codex to explain likely bugs, misconfigurations, and improvement opportunities.
+4. Store findings in SQLite so repeated noise does not alert forever.
+5. Associate each incident with its configured GitHub repository target.
+6. In an isolated clone, prepare a minimal fix and regression tests, enforce patch
+   policy, run validation, and optionally open a pull request.
+
+## Autonomy modes
+
+- `observe` — Detect and diagnose only. Nothing is cloned, nothing is written. Default for every new target.
+- `fix` — Writes and validates a patch in an isolated clone. Nothing leaves the clone.
+- `draft-pr` — Same validation, then pushes a branch and opens a draft pull request.
+- `pr` — Opens a review-ready pull request. Still ends at human approval.
+
+## Commands
+
+- `guiltyspark once` — Poll Loki once and analyze what is there right now.
+- `guiltyspark daemon` — Run continuously, polling on an interval. The normal mode.
+- `guiltyspark doctor` — Check configuration and connectivity.
+- `guiltyspark dashboard` — Serve the web console on port 8343.
+- `guiltyspark replay` — Re-run a captured incident against a local checkout.
+
+## Requirements
+
+- Docker
+- A Grafana Loki instance to read logs from
+- A Codex session authenticated with a ChatGPT account (no separately billed OpenAI API key)
+
+## Docs
+
+- [README](https://github.com/bheus/guiltyspark#readme): Installation, configuration, environment variables, repository targets, deployment.
+- [Quick start](https://github.com/bheus/guiltyspark#quick-start): Minimal setup, four commands.
+- [Configuration](https://github.com/bheus/guiltyspark#configuration): Full environment-variable reference.
+- [Repository targets](https://github.com/bheus/guiltyspark#repository-targets): Mapping Loki queries to GitHub repositories and autonomy modes.
+- [Replaying a captured incident](https://github.com/bheus/guiltyspark#replaying-a-captured-incident): Rehearsing remediation against a local checkout.
+- [Dashboard](https://github.com/bheus/guiltyspark#dashboard): Web console for live anomalies, silences, and remediation records.
+
+## Source
+
+- [GitHub repository](https://github.com/bheus/guiltyspark): Source, issues, releases.
+- [License](https://www.apache.org/licenses/LICENSE-2.0): Apache-2.0.
+- [Security contact](https://github.com/bheus/guiltyspark/security/advisories/new): Report a vulnerability.
