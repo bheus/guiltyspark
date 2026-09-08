@@ -123,6 +123,16 @@ class Incident:
         )
 
 
+# A cause the analyst did not actually determine. Remediation is gated on this:
+# a repair prompt that carries "unknown" as the cause still produces a patch, and
+# that patch lands at the crash site rather than at the defect. Matching is on the
+# opening clause, so "Unknown. The logs do not identify a caller." counts too.
+_UNKNOWN_CAUSE = re.compile(
+    r"^(?:unknown|unclear|undetermined|indeterminate|not determined|"
+    r"cannot be determined|no(?:t)? identified|insufficient evidence)$"
+)
+
+
 @dataclass(frozen=True)
 class Finding:
     fingerprint: str
@@ -134,6 +144,13 @@ class Finding:
     recommended_fix: str
     pr_recommended: bool
     raw: dict[str, Any]
+
+    @property
+    def cause_is_unknown(self) -> bool:
+        opening = re.split(r"[.;\n]", self.suspected_cause.strip(), maxsplit=1)[0]
+        return not opening.strip() or bool(
+            _UNKNOWN_CAUSE.match(opening.strip().strip("*_\"'` ").lower())
+        )
 
     def stable_hash(self) -> str:
         content = json.dumps(
