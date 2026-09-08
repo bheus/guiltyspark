@@ -72,6 +72,8 @@ def load_replay_case(path: Path) -> tuple[Incident, Finding]:
         count=int(incident_payload["count"]),
         labels={str(k): str(v) for k, v in incident_payload.get("labels", {}).items()},
         samples=[str(item) for item in incident_payload.get("samples", [])],
+        context=[str(item) for item in incident_payload.get("context", [])],
+        observed_events=int(incident_payload.get("observed_events", 0)),
     )
     finding = Finding(
         fingerprint=str(finding_payload["fingerprint"]),
