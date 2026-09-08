@@ -523,7 +523,9 @@ class DashboardService:
         candidates = _merge_events(pages)
         errors = [event for event in candidates if event.level in ANOMALY_LEVELS]
         total_events = client.count_over_window(base_query, start_ns, end_ns)
-        incidents = group_incidents(errors, min_events=1)
+        # The stream is already filtered to errors, so there is no surrounding
+        # context to gather here — and this view never reaches the analyst.
+        incidents = group_incidents(errors, min_events=1, include_context=False)
         selectors = [
             (target.id, parse_stream_selector(target.loki_query))
             for target in self._targets()

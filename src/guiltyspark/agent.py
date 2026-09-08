@@ -21,6 +21,18 @@ evidence clearly identifies a repository defect. In fix, draft-pr, or pr mode, r
 repair work only when the logs support a specific, testable code or configuration fix.
 External outages alone are not code defects, but missing fallback or error handling can be.
 
+Where an incident carries service_log_volume or surrounding_lines, weigh them: a few
+failures among a large volume of otherwise healthy lines is intermittent, which points at
+concurrency, contention, or resource exhaustion rather than a logic or parameter defect
+that would fail every time. Concurrent activity in the surrounding lines is evidence for
+that reading.
+
+Set pr_recommended only when the evidence identifies the causal chain. If suspected_cause
+is unknown, or the evidence supports the symptom but not its cause, set pr_recommended
+false and describe the investigation needed in recommended_fix: a repair attempted without
+a cause patches the crash site, which for concurrency, resource-exhaustion, and
+configuration defects is never where the fault lives.
+
 If the repository documents expected or benign log patterns, honor that documentation:
 incidents that clearly match a documented expected pattern are normal operation, not
 anomalies. Do not report them as findings unless the evidence shows the documented

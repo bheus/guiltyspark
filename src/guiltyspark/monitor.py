@@ -137,12 +137,23 @@ class Monitor:
         if self.target is None:
             return 0
         incidents_by_fingerprint = {incident.fingerprint: incident for incident in incidents}
-        candidates = [
-            (finding, incidents_by_fingerprint[finding.fingerprint])
-            for finding in findings
-            if finding.pr_recommended
-            and finding.fingerprint in incidents_by_fingerprint
-        ]
+        candidates = []
+        for finding in findings:
+            if not finding.pr_recommended:
+                continue
+            if finding.fingerprint not in incidents_by_fingerprint:
+                continue
+            # A repair prompt carrying "unknown" as the cause still yields a patch,
+            # and it lands wherever the traceback points rather than at the defect.
+            # The finding is still catalogued and notified; only the PR is withheld.
+            if finding.cause_is_unknown:
+                print(
+                    f"remediation_blocked target={self.target_id} "
+                    f"fingerprint={finding.fingerprint} reason=unknown_cause",
+                    flush=True,
+                )
+                continue
+            candidates.append((finding, incidents_by_fingerprint[finding.fingerprint]))
         # Collapse near-duplicate fingerprints to one logical issue and drop any
         # whose issue already has a live/recent PR, so we do not re-file the same
         # malfunction under slightly different wording.

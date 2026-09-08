@@ -208,3 +208,59 @@ def test_observe_holds_remediation_until_operator_releases_it(tmp_path):
 
     assert asyncio.run(monitor._remediate([], [])) == 1
     assert monitor.state.pending_remediation_jobs("web") == []
+
+
+def _finding(**overrides) -> Finding:
+    values = {
+        "fingerprint": "fp-unknown",
+        "title": "Endpoint returns 500",
+        "severity": "high",
+        "summary": "The endpoint fails intermittently.",
+        "evidence": ["500 from /api/thing"],
+        "suspected_cause": "A stale connection handle.",
+        "recommended_fix": "Reopen the handle per request.",
+        "pr_recommended": True,
+        "raw": {},
+    }
+    values.update(overrides)
+    return Finding(**values)
+
+
+def _unknown_cause_incident() -> Incident:
+    return Incident(
+        fingerprint="fp-unknown",
+        service="web",
+        level="error",
+        first_seen_ns=1,
+        last_seen_ns=2,
+        count=2,
+        labels={"service": "web"},
+        samples=["500 from /api/thing"],
+    )
+
+
+def test_unknown_cause_is_not_queued_for_remediation(tmp_path):
+    settings = replace(_settings(tmp_path), dedup_issues=False)
+    monitor = Monitor(settings, _target("web", "{a=1}"))
+    incident = _unknown_cause_incident()
+
+    attempted = asyncio.run(
+        monitor._remediate(
+            [_finding(suspected_cause="Unknown. The logs do not name a caller.")],
+            [incident],
+        )
+    )
+
+    assert attempted == 0
+    assert monitor.state.pending_remediation_jobs("web") == []
+    assert monitor.state.held_remediation_jobs("web") == 0
+
+
+def test_known_cause_is_still_queued_for_remediation(tmp_path):
+    settings = replace(_settings(tmp_path), dedup_issues=False)
+    monitor = Monitor(settings, _target("web", "{a=1}"))
+    incident = _unknown_cause_incident()
+
+    asyncio.run(monitor._remediate([_finding()], [incident]))
+
+    assert monitor.state.held_remediation_jobs("web") == 1

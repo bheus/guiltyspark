@@ -20,15 +20,28 @@ from guiltyspark.targets import Target
 
 REPAIR_INSTRUCTIONS = """You are repairing a repository in response to a production incident.
 
-Inspect the repository and the supplied log evidence, identify the code defect, and make the
-smallest robust fix. Add or update regression tests. Do not commit, push, access credentials,
-or create a pull request. Do not modify generated files or unrelated code. The controller will
-review the diff and run validation after you finish.
+Inspect the repository and the supplied log evidence and identify the code defect first. The
+defect is often not at the line that raised: read how the failing object was constructed and
+who else holds it, not only the failing frame. Then make the smallest fix that corrects that
+defect — where the correct fix is structural, make the structural fix rather than a narrower
+edit near the traceback.
+
+Add or update regression tests that fail against the real defect. A test that only fails
+against a fabricated mock of a state the system cannot reach is evidence the diff is
+unnecessary, not evidence it works. If the evidence does not let you identify the defect, or
+you cannot make a test that reproduces it, change nothing and explain what you found instead —
+the controller records a no-change outcome for an operator to pick up.
+
+Do not commit, push, access credentials, or create a pull request. Do not modify generated
+files or unrelated code. The controller will review the diff and run validation after you
+finish.
 """
 
 SECRET_VALUE = re.compile(
     r"(?i)(authorization|api[_-]?key|password|secret|token)(\s*[:=]\s*)([^\s,;]+)"
 )
+# Matches the prompt cap in github_content.py, which feeds the same doc to analysis.
+_MAX_DOC_CHARS = 16_000
 BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 CONVENTIONAL_TITLE = re.compile(
     r"(?i)^(?:build|chore|ci|docs|feat|fix|perf|refactor|style|test)"
@@ -59,6 +72,8 @@ def load_replay_case(path: Path) -> tuple[Incident, Finding]:
         count=int(incident_payload["count"]),
         labels={str(k): str(v) for k, v in incident_payload.get("labels", {}).items()},
         samples=[str(item) for item in incident_payload.get("samples", [])],
+        context=[str(item) for item in incident_payload.get("context", [])],
+        observed_events=int(incident_payload.get("observed_events", 0)),
     )
     finding = Finding(
         fingerprint=str(finding_payload["fingerprint"]),
@@ -156,6 +171,7 @@ class Remediator:
             f"{REPAIR_INSTRUCTIONS}\n\n"
             f"Repository: {target.github_repo}\n"
             f"Base branch: {target.base_branch}\n\n"
+            f"{self._expected_logs_block(workspace, target)}"
             f"Diagnosis:\n{finding.summary}\n\n"
             f"Suspected cause:\n{finding.suspected_cause}\n\n"
             f"Recommended direction:\n{finding.recommended_fix}\n\n"
@@ -182,6 +198,32 @@ class Remediator:
             timeout=self.settings.codex_timeout_seconds,
         )
         return (completed.stdout + completed.stderr).strip()
+
+    def _expected_logs_block(self, workspace: Path, target: Target) -> str:
+        """The repo's own log documentation, read out of the clone.
+
+        Analysis already honours this file; the repairer needs it too, because it
+        is where a repository states which log levels warrant a patch at all and
+        which want an issue or an escalation instead.
+        """
+        if not target.expected_logs_path:
+            return ""
+        path = workspace / target.expected_logs_path
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return ""
+        if not text:
+            return ""
+        return (
+            "The repository documents its expected log patterns and its policy for "
+            f"acting on them in {target.expected_logs_path}. Honour that policy — "
+            "including any instruction to prefer an issue over a patch, or to escalate "
+            "a recurrence.\n"
+            "----- BEGIN EXPECTED LOGS -----\n"
+            f"{text[:_MAX_DOC_CHARS]}\n"
+            "----- END EXPECTED LOGS -----\n\n"
+        )
 
     def _changed_files(self, workspace: Path) -> tuple[str, ...]:
         output = self._git(workspace, "status", "--porcelain").stdout

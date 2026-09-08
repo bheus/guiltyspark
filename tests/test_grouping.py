@@ -54,6 +54,42 @@ class GroupingTests(unittest.TestCase):
         self.assertTrue(is_signal(event("upstream connection refused")))
         self.assertFalse(is_signal(event("started worker successfully")))
 
+    def test_surrounding_lines_and_volume_are_captured(self) -> None:
+        second = 1_000_000_000
+        events = [
+            event("GET /api/holdings 200", ts=10 * second),
+            event("GET /api/holdings-history 500 InterfaceError", ts=10 * second + 1),
+            event("GET /api/positions 200", ts=10 * second + 2),
+            event("nightly import complete", ts=600 * second),
+        ]
+        incidents = group_incidents(events, min_events=1)
+        self.assertEqual(len(incidents), 1)
+        incident = incidents[0]
+        self.assertEqual(incident.observed_events, 4)
+        self.assertEqual(
+            incident.context, ["GET /api/holdings 200", "GET /api/positions 200"]
+        )
+        block = incident.to_prompt_block()
+        self.assertIn("1 matching line(s) out of 4", block)
+        self.assertIn("GET /api/holdings 200", block)
+        self.assertNotIn("nightly import complete", block)
+
+    def test_context_is_scoped_to_the_incident_service(self) -> None:
+        events = [
+            event("GET /api/holdings-history 500 InterfaceError", ts=1, labels={"app": "abraham"}),
+            event("GET /healthz 200", ts=2, labels={"app": "other"}),
+        ]
+        incidents = group_incidents(events, min_events=1)
+        self.assertEqual(incidents[0].context, [])
+        self.assertEqual(incidents[0].observed_events, 1)
+
+    def test_prefiltered_callers_get_no_volume_ratio(self) -> None:
+        events = [event("upstream connection refused", ts=1)]
+        incident = group_incidents(events, min_events=1, include_context=False)[0]
+        self.assertEqual(incident.observed_events, 0)
+        self.assertEqual(incident.context, [])
+        self.assertNotIn("service_log_volume", incident.to_prompt_block())
+
     def test_group_incidents_keeps_repeated_warning(self) -> None:
         events = [
             event("retry 1 failed for upstream", ts=1),

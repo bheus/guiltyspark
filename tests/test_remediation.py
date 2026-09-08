@@ -124,6 +124,41 @@ class RemediationTests(unittest.TestCase):
             self.assertIn("workspace-write", command)
             self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
 
+    def test_repair_prompt_carries_the_repository_log_policy(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
+        incident, finding = load_replay_case(fixture)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "repo"
+            (workspace / "docs").mkdir(parents=True)
+            (workspace / "docs" / "EXPECTED_LOGS.md").write_text(
+                "ERROR means an issue or a PR; PRs welcome when the chain is clear.",
+                encoding="utf-8",
+            )
+            remediator = Remediator(settings(root))
+            with patch.object(remediator, "_run") as run:
+                remediator._run_codex(
+                    workspace,
+                    target(expected_logs_path="docs/EXPECTED_LOGS.md"),
+                    incident,
+                    finding,
+                )
+
+        prompt = run.call_args.kwargs["input_text"]
+        self.assertIn("PRs welcome when the chain is clear", prompt)
+        self.assertIn("docs/EXPECTED_LOGS.md", prompt)
+
+    def test_repair_prompt_omits_the_policy_block_when_undocumented(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
+        incident, finding = load_replay_case(fixture)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remediator = Remediator(settings(root))
+            with patch.object(remediator, "_run") as run:
+                remediator._run_codex(root, target(), incident, finding)
+
+        self.assertNotIn("EXPECTED LOGS", run.call_args.kwargs["input_text"])
+
     def test_code_fix_uses_remediation_model(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "example-upstream-outage.json"
         incident, finding = load_replay_case(fixture)

@@ -107,11 +107,19 @@ class Incident:
     count: int
     labels: dict[str, str]
     samples: list[str] = field(default_factory=list)
+    # Non-signal lines the same service logged around the failure, and how many
+    # lines it logged in the window overall. Whether a failure is deterministic or
+    # intermittent is often the whole diagnosis — one 500 among hundreds of 200s
+    # rules out a parameter bug on its face — and neither is visible in the error
+    # lines alone. Both default to empty so payloads written before they existed,
+    # and callers handing in a pre-filtered stream, still load.
+    context: list[str] = field(default_factory=list)
+    observed_events: int = 0
 
     def to_prompt_block(self) -> str:
         sample_text = "\n".join(f"- {line}" for line in self.samples[:8])
         labels = json.dumps(self.labels, sort_keys=True)
-        return (
+        block = (
             f"fingerprint: {self.fingerprint}\n"
             f"service: {self.service}\n"
             f"level: {self.level}\n"
@@ -119,8 +127,30 @@ class Incident:
             f"first_seen_utc: {self.first_seen_ns}\n"
             f"last_seen_utc: {self.last_seen_ns}\n"
             f"labels: {labels}\n"
-            f"samples:\n{sample_text}"
         )
+        if self.observed_events:
+            block += (
+                f"service_log_volume: {self.count} matching line(s) out of "
+                f"{self.observed_events} that {self.service} logged in this window\n"
+            )
+        block += f"samples:\n{sample_text}"
+        if self.context:
+            context_text = "\n".join(f"- {line}" for line in self.context)
+            block += (
+                "\nsurrounding_lines (other lines the same service logged around "
+                f"these, not themselves errors):\n{context_text}"
+            )
+        return block
+
+
+# A cause the analyst did not actually determine. Remediation is gated on this:
+# a repair prompt that carries "unknown" as the cause still produces a patch, and
+# that patch lands at the crash site rather than at the defect. Matching is on the
+# opening clause, so "Unknown. The logs do not identify a caller." counts too.
+_UNKNOWN_CAUSE = re.compile(
+    r"^(?:unknown|unclear|undetermined|indeterminate|not determined|"
+    r"cannot be determined|no(?:t)? identified|insufficient evidence)$"
+)
 
 
 @dataclass(frozen=True)
@@ -134,6 +164,13 @@ class Finding:
     recommended_fix: str
     pr_recommended: bool
     raw: dict[str, Any]
+
+    @property
+    def cause_is_unknown(self) -> bool:
+        opening = re.split(r"[.;\n]", self.suspected_cause.strip(), maxsplit=1)[0]
+        return not opening.strip() or bool(
+            _UNKNOWN_CAUSE.match(opening.strip().strip("*_\"'` ").lower())
+        )
 
     def stable_hash(self) -> str:
         content = json.dumps(

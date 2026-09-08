@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from guiltyspark.models import LogEvent
+from guiltyspark.models import Finding, LogEvent
 
 
 def _event(line: str, **labels) -> LogEvent:
@@ -64,3 +64,34 @@ class TestLogEventLevel:
 
     def test_json_level_inside_a_word_is_not_a_declaration(self):
         assert _event('{"sublevel": "info", "msg": "error occurred"}').level == "error"
+
+
+class TestFindingCauseIsUnknown:
+    def _finding(self, cause: str) -> Finding:
+        return Finding(
+            fingerprint="fp",
+            title="t",
+            severity="high",
+            summary="s",
+            evidence=[],
+            suspected_cause=cause,
+            recommended_fix="f",
+            pr_recommended=True,
+            raw={},
+        )
+
+    def test_bare_unknown(self):
+        assert self._finding("unknown").cause_is_unknown
+
+    def test_unknown_with_trailing_prose(self):
+        assert self._finding("Unknown. The logs do not name a caller.").cause_is_unknown
+
+    def test_empty_cause(self):
+        assert self._finding("   ").cause_is_unknown
+
+    def test_a_cause_that_merely_mentions_the_word(self):
+        finding = self._finding("An unknown symbol is dereferenced on the retry path")
+        assert not finding.cause_is_unknown
+
+    def test_a_real_cause(self):
+        assert not self._finding("A stale connection handle.").cause_is_unknown
