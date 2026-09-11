@@ -102,6 +102,14 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - guiltyspark-data:/data
+    networks:
+      - default
+      - caddy
+    labels:
+      # http:// is explicit: a bare hostname makes Caddy attempt ACME, which
+      # cannot succeed for .lan and leaves the route dead.
+      - "caddy=http://guiltyspark.svc.lan"
+      - "caddy.reverse_proxy={{upstreams ${GUILTYSPARK_DASHBOARD_PORT:-8343}}}"
 
   guiltyspark-site:
     image: ${GUILTYSPARK_SITE_IMAGE:-ghcr.io/bheus/guiltyspark-site:latest}
@@ -115,6 +123,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+networks:
+  caddy:
+    external: true
+    name: caddy
 
 volumes:
   guiltyspark-data:
