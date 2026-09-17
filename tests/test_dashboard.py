@@ -6,6 +6,7 @@ import threading
 import urllib.request
 from importlib import resources
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,7 @@ from guiltyspark.config import Settings
 from guiltyspark.dashboard import (
     ANOMALY_LEVELS,
     ANOMALY_LINE_PATTERN,
+    DashboardHandler,
     DashboardService,
     _containers_param,
     _DECLARED_NON_ANOMALY_PATTERN,
@@ -821,6 +823,29 @@ def _request(method: str, url: str, body: dict | None = None) -> tuple[int, dict
 
 
 class TestHTTPServer:
+    @pytest.mark.parametrize("disconnect", [BrokenPipeError, ConnectionResetError])
+    def test_client_disconnect_does_not_trigger_a_second_response(self, disconnect):
+        handler = DashboardHandler.__new__(DashboardHandler)
+        handler.server = SimpleNamespace(
+            service=SimpleNamespace(findings=lambda *_args: {"findings": []})
+        )
+        handler.path = "/api/findings"
+        handler.request_version = "HTTP/1.1"
+        handler.requestline = "GET /api/findings HTTP/1.1"
+        handler.command = "GET"
+
+        class ClosedSocketWriter:
+            def __init__(self):
+                self.write_count = 0
+
+            def write(self, data):
+                self.write_count += 1
+                raise disconnect()
+
+        handler.wfile = ClosedSocketWriter()
+        handler.do_GET()
+        assert handler.wfile.write_count == 1
+
     def test_serves_index(self, built_bundle, dashboard_server):
         status, body = _get(dashboard_server + "/")
         assert status == 200
