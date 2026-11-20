@@ -1,7 +1,7 @@
 # Stage 1: build the React dashboard bundle. Vite emits into
 # /app/src/guiltyspark/web (outDir "../src/guiltyspark/web" relative to
 # /app/frontend), which the Python stage copies into the package.
-FROM node:24.22.3-slim AS web
+FROM node:26.13.1-slim AS web
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
