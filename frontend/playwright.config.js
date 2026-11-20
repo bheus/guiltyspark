@@ -21,7 +21,6 @@ export default defineConfig({
     toHaveScreenshot: { maxDiffPixels: 0, threshold: 0, animations: 'disabled', caret: 'hide' },
   },
   use: {
-    baseURL: 'http://127.0.0.1:8099',
     locale: 'en-US',
     timezoneId: 'UTC',
     colorScheme: 'light',
@@ -50,6 +49,32 @@ export default defineConfig({
     },
   ],
   webServer: [
+    {
+      command: 'cd .. && uv run --no-sync python -m tests.e2e.fakes --port 8097',
+      url: 'http://127.0.0.1:8097/__health',
+      reuseExistingServer: false,
+    },
+    {
+      command: 'cd .. && uv run --no-sync python -m tests.e2e.fixture_server --state busy --port 8099',
+      url: 'http://127.0.0.1:8099/api/overview',
+      reuseExistingServer: false,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+    {
+      command: 'cd .. && uv run --no-sync python -m tests.e2e.fixture_server --state empty --port 8098',
+      url: 'http://127.0.0.1:8098/api/overview',
+      reuseExistingServer: false,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+    {
+      command: 'cd .. && uv run --no-sync python -m tests.e2e.fixture_server --state busy --port 8095',
+      url: 'http://127.0.0.1:8095/api/overview',
+      reuseExistingServer: false,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
     {
       command: 'python3 -m http.server 8096 --bind 127.0.0.1 -d ../site',
       url: 'http://127.0.0.1:8096/robots.txt',
