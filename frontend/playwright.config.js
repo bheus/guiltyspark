@@ -16,6 +16,7 @@ export default defineConfig({
   // A missing baseline fails without being written: new screenshots are approved
   // only through `--update-snapshots`, never by a rerun.
   updateSnapshots: 'none',
+  globalTeardown: './e2e/global-teardown.js',
   reporter: [['list'], ['html', { open: 'never' }]],
   expect: {
     toHaveScreenshot: { maxDiffPixels: 0, threshold: 0, animations: 'disabled', caret: 'hide' },
