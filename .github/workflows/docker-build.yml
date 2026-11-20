@@ -2,6 +2,8 @@ name: Docker image build
 
 # The release job only builds the image after a release is cut, so a broken
 # Dockerfile or base-image bump would otherwise merge green and fail at deploy.
+# Billed minutes: only Dependabot's bumps are checked here; human changes to the
+# image are expected to be built locally before pushing.
 on:
   pull_request:
     paths:
@@ -21,6 +23,7 @@ concurrency:
 jobs:
   image:
     name: Build image
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     # Matches the release platform, so the build is native rather than emulated.
     runs-on: ubuntu-24.04-arm
     permissions:
