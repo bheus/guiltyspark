@@ -41,3 +41,9 @@ def test_busy_has_two_targets(tmp_path):
 def test_remediation_ages_are_frozen(tmp_path):
     created = [r["created_at"] for r in _service(tmp_path, "busy").state.recent_remediations()]
     assert created == ["2026-06-15 08:20:00", "2026-06-15 09:50:00", "2026-06-15 11:20:00"]
+
+
+def test_silenced_times_are_frozen(tmp_path):
+    ignored = _service(tmp_path, "busy").ignored_anomalies()
+    stamps = [item.get("created_at") for group in ignored.values() if isinstance(group, list) for item in group]
+    assert stamps and all(stamp.startswith("2026-06-1") for stamp in stamps)

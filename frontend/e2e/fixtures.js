@@ -35,15 +35,17 @@ export async function expectBaseline(target, name, options) {
   await expect(target).toHaveScreenshot(name, options)
 }
 
-/** Load a dashboard and wait until its first poll has landed, clustered groups included. */
+/** Load a dashboard once its server has finished clustering, and wait for the first poll. */
 export async function gotoDashboard(page, url = DASHBOARDS.busy) {
+  // Clustering runs off-thread and is cached by the server, so wait for it there
+  // rather than racing the page's own polls for a response body.
+  await expect.poll(async () => {
+    const body = await (await page.request.get(`${url}/api/anomalies?minutes=60`)).json()
+    return Boolean(body.groups_pending)
+  }, { timeout: 20_000 }).toBe(false)
   const ready = Promise.all([
     page.waitForResponse(r => r.url().includes('/api/overview') && r.ok()),
-    page.waitForResponse(async r => {
-      if (!r.url().includes('/api/anomalies?') || !r.ok()) return false
-      const body = await r.json()
-      return !body.groups_pending
-    }, { timeout: 20_000 }),
+    page.waitForResponse(r => r.url().includes('/api/anomalies?') && r.ok()),
   ])
   await page.goto(url)
   await ready
@@ -79,6 +81,9 @@ export const test = base.extend({
       }
     })
 
+    // Tests never leave the machine: the marketing site's Google Fonts fall back
+    // to local faces, which also keeps its screenshots independent of a CDN.
+    await page.route(url => !['127.0.0.1', 'localhost'].includes(url.hostname), route => route.abort())
     await page.clock.setFixedTime(FROZEN_AT)
     await use(page)
     const unexpected = await (await request.get(`${FAKES}/__unexpected`)).json()

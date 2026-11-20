@@ -22,7 +22,8 @@ if "Incidents:" in prompt:
         "fingerprints": storage,
     }]}
 else:
-    sample = re.search(r"^- (.+)$", prompt, re.MULTILINE)
+    examples = prompt.split("Example log lines:", 1)[-1]
+    sample = re.search(r"^- (.+)$", examples, re.MULTILINE)
     literal = re.escape(sample.group(1)) if sample else "unknown"
     answer = {"pattern": literal, "explanation": "Matches this exact message only."}
 

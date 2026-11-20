@@ -145,3 +145,6 @@ def _seed_silenced(store: StateStore) -> None:
     store.add_ignore_rule(
         "legacy-cron", "nightly export failed", title="Legacy export", note="Retired job; owner notified.",
     )
+    with store._connect() as db:  # noqa: SLF001 - test seeding only
+        db.execute("update ignored_anomalies set created_at = ?", (_sql_time(60 * 26),))
+        db.execute("update ignore_rules set created_at = ?", (_sql_time(60 * 72),))
