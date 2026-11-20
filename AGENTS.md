@@ -85,6 +85,29 @@ docker build -t guiltyspark:local .         # build locally
 Tests live in `tests/` and mirror the modules (`test_agent_json.py`, `test_remediation.py`,
 `test_targets.py`, etc.). Add coverage alongside behavior changes.
 
+### Integration and visual tests
+
+`npm --prefix frontend run test:e2e` runs the Playwright suite in `frontend/e2e/` against
+the real dashboard (`tests/e2e/fixture_server.py`): `make_server` over seeded SQLite and
+findings (`tests/e2e/seeds.py`), with `tests/e2e/fakes.py` standing in for Loki and the
+GitHub API and `tests/e2e/fake_codex.py` for `codex exec`. Three dashboards run: busy
+(:8099), empty (:8098), and a busy copy the action tests mutate (:8095); the marketing
+site is served statically (:8096). Seeds and the server clock are pinned to
+2026-06-15T12:00Z, and the browser blocks every non-local request.
+
+- **Container only.** `frontend/e2e/run.sh` runs it in the pinned
+  `mcr.microsoft.com/playwright` linux/arm64 image (tag follows `@playwright/test` in
+  `frontend/package-lock.json`). Baselines are exact pixels, so the config refuses to
+  run on the host.
+- **Approving a visual change.** A missing or different screenshot fails and is never
+  written automatically. Run `npm --prefix frontend run test:visual:update`, review the
+  PNGs in `git diff`, and commit them. A full run fails on a baseline no test uses.
+- **Changing what the dashboard shows** usually means updating `tests/e2e/seeds.py`;
+  `tests/test_e2e_fixture.py` pins the seeded counts the browser tests assert on.
+- **When it runs.** CI (`.github/workflows/frontend-e2e.yml`) runs it only on
+  Dependabot PRs. The pre-push hook runs it before pushes that touch the dashboard or
+  site; enable it once per clone with `git config core.hooksPath .githooks`.
+
 ## Conventions
 
 - **Commits** follow Conventional Commits (`feat:`, `fix:`, `chore:`, …). `semantic-release`

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Runs the integration suite before a push whose new commits touch the site.
+# Enable once per clone: `git config core.hooksPath .githooks`. Skip with `git push --no-verify`.
+set -euo pipefail
+
+remote=$1
+zero=0000000000000000000000000000000000000000
+site_paths='^(frontend/|site/|tests/e2e/|src/guiltyspark/(dashboard|state|models|targets|clustering|config|github_pr|loki|grouping)\.py$)'
+
+touches_site=false
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    range=("$local_sha" --not "--remotes=$remote")
+  else
+    range=("$remote_sha..$local_sha")
+  fi
+  # grep reads to the end: with pipefail, `grep -q` quitting early would SIGPIPE git log.
+  if git log --name-only --format= "${range[@]}" | grep -E "$site_paths" >/dev/null; then
+    touches_site=true
+  fi
+done
+$touches_site || exit 0
+
+cd "$(git rev-parse --show-toplevel)"
+
+# The suite renders the working tree, so it only vouches for the pushed commits
+# when the site files in the tree are those commits.
+if git status --porcelain --untracked-files=all | cut -c4- | grep -E "$site_paths" >/dev/null; then
+  echo "pre-push: commit or stash the uncommitted site changes first, so the suite tests what is being pushed." >&2
+  exit 1
+fi
+
+echo "pre-push: this push touches the dashboard or site; running the integration suite (npm --prefix frontend run test:e2e)..." >&2
+if ! npm --prefix frontend run test:e2e >&2; then
+  echo "pre-push: integration suite failed, push blocked. If the visual change is intended, run \`npm --prefix frontend run test:visual:update\`, review the PNGs in git diff and commit them." >&2
+  exit 1
+fi
