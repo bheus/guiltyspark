@@ -12,10 +12,13 @@ updates:
     directory: /frontend
     schedule:
       interval: monthly
+    open-pull-requests-limit: 3
     groups:
       # react-dom requires the same react major as a peer, so bumping either alone fails npm ci.
       react:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      vite:
+        patterns: ["vite", "@vitejs/plugin-react"]
       npm-minor-and-patch:
         update-types: [minor, patch]
 
@@ -23,6 +26,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
   - package-ecosystem: docker
     directory: /
