@@ -1,9 +1,17 @@
 version: 2
 updates:
+  # Prefixes decide what semantic-release ships. Dependabot gives security
+  # updates the same prefix as routine bumps of that ecosystem, so anything that
+  # lands in an image is "fix" (cuts a release and redeploys). Dev dependencies
+  # and actions never reach an image, so "chore"/"ci" keep them from releasing.
   - package-ecosystem: uv
     directory: /
     schedule:
       interval: monthly
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
     groups:
       python-minor-and-patch:
         update-types: [minor, patch]
@@ -12,6 +20,10 @@ updates:
     directory: /frontend
     schedule:
       interval: monthly
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
     open-pull-requests-limit: 3
     groups:
       # react-dom requires the same react major as a peer, so bumping either alone fails npm ci.
@@ -26,6 +38,9 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    commit-message:
+      prefix: ci
+      include: scope
     groups:
       actions-minor-and-patch:
         patterns: ["*"]
@@ -35,9 +50,15 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    commit-message:
+      prefix: fix
+      include: scope
 
   - package-ecosystem: docker
     directory: /site
     schedule:
       interval: weekly
       day: sunday
+    commit-message:
+      prefix: fix
+      include: scope
