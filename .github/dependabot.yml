@@ -3,8 +3,7 @@ updates:
   - package-ecosystem: uv
     directory: /
     schedule:
-      interval: weekly
-      day: sunday
+      interval: monthly
     groups:
       python-minor-and-patch:
         update-types: [minor, patch]
@@ -12,8 +11,7 @@ updates:
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
-      day: sunday
+      interval: monthly
     groups:
       # react-dom requires the same react major as a peer, so bumping either alone fails npm ci.
       react:
@@ -29,8 +27,7 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
-      day: sunday
+      interval: monthly
 
   - package-ecosystem: docker
     directory: /site
