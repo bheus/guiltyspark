@@ -1,0 +1,47 @@
+name: Integration and visual tests
+
+# Billed minutes: the git pre-push hook (.githooks/pre-push) runs this suite locally
+# before any push that touches the dashboard or site. CI covers only what never
+# passes through that hook: Dependabot's dependency bumps.
+on:
+  pull_request:
+
+concurrency:
+  group: frontend-e2e-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-e2e:
+    name: Integration and visual tests
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # Baselines are linux/arm64 renders; another architecture rasterizes differently.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+
+      - name: Restore npm and uv caches
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ runner.temp }}/e2e-cache
+          key: e2e-${{ hashFiles('frontend/package-lock.json', 'uv.lock') }}
+          restore-keys: e2e-
+
+      - name: Run the suite in the pinned Playwright container
+        env:
+          E2E_CACHE_DIR: ${{ runner.temp }}/e2e-cache
+          CI: "true"
+        run: frontend/e2e/run.sh
+
+      - name: Upload the diff report
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14

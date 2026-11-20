@@ -23,3 +23,6 @@ targets.local.toml
 /frontend/node_modules/
 /frontend/dist/
 /frontend/*.tsbuildinfo
+
+/frontend/playwright-report/
+/frontend/test-results/
