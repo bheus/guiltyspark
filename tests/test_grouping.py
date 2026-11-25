@@ -1,7 +1,7 @@
 import unittest
 
 from guiltyspark.grouping import group_incidents, is_signal
-from guiltyspark.models import LogEvent, fingerprint_for, normalize_line
+from guiltyspark.models import Incident, LogEvent, fingerprint_for, normalize_line
 
 
 def event(line: str, ts: int = 1, labels: dict[str, str] | None = None) -> LogEvent:
@@ -9,6 +9,25 @@ def event(line: str, ts: int = 1, labels: dict[str, str] | None = None) -> LogEv
 
 
 class GroupingTests(unittest.TestCase):
+    def test_guiltyspark_incident_metadata_does_not_recurse_into_an_incident(self) -> None:
+        reported = Incident(
+            fingerprint="d65f3616e91a30fe",
+            service="guiltyspark",
+            level="fatal",
+            first_seen_ns=1,
+            last_seen_ns=2,
+            count=88,
+            labels={"container": "guiltyspark", "stream": "stdout"},
+            samples=["level: fatal"],
+        )
+        # Docker records each line of the report as its own Loki event.
+        report_events = [
+            event(line, ts=index, labels={"container": "guiltyspark", "stream": "stdout"})
+            for index, line in enumerate(reported.to_prompt_block().splitlines(), start=1)
+        ]
+
+        self.assertEqual(group_incidents(report_events, min_events=1), [])
+
     def test_normalize_line_removes_noisy_numbers_and_ids(self) -> None:
         left = normalize_line("request 123 failed for user abcdef123456")
         right = normalize_line("request 456 failed for user fedcba999999")

@@ -39,6 +39,12 @@ DECLARED_LEVEL = re.compile(
     rf"|\"(?:{_LEVEL_KEYS})\"\s*:\s*\"({_LEVEL_NAMES})\"",
     re.IGNORECASE,
 )
+# Incident prompt blocks are multiline, so container logging records each field
+# as a separate event.  Do not interpret the Monitor's own serialized level
+# field (or the same line quoted as a sample) as the level of that log event.
+_GUILTYSPARK_REPORT_LEVEL = re.compile(
+    rf"^\s*(?:-\s*)?level:\s*(?:{_LEVEL_NAMES})\s*$", re.IGNORECASE
+)
 
 
 # Synonyms a logger may use for the four levels the rest of the system knows
@@ -83,6 +89,8 @@ class LogEvent:
         explicit = self.labels.get("level") or self.labels.get("severity")
         if explicit:
             return _normalize_level(explicit)
+        if self.service == "guiltyspark" and _GUILTYSPARK_REPORT_LEVEL.fullmatch(self.line):
+            return "info"
         declared = DECLARED_LEVEL.search(self.line)
         if declared:
             # One group per serialization; exactly one of them matched.
