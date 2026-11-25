@@ -54,6 +54,14 @@ _LEVEL_SYNONYMS = {
     "emergency": "fatal",
 }
 
+# Expected safety guards whose wording contains severity keywords. These must be
+# classified before the generic substring scan, while still allowing an explicit
+# logger-provided level to take precedence.
+_EXPECTED_GUARD_LEVELS = {
+    "Cash-flow sync failed (non-fatal): a successful broker reconciliation "
+    "is required before new orders": "warning",
+}
+
 
 def _normalize_level(value: str) -> str:
     lowered = value.strip().lower()
@@ -87,6 +95,9 @@ class LogEvent:
         if declared:
             # One group per serialization; exactly one of them matched.
             return _normalize_level(declared.group(1) or declared.group(2))
+        expected_guard = _EXPECTED_GUARD_LEVELS.get(self.line.strip())
+        if expected_guard:
+            return expected_guard
         lowered = self.line.lower()
         if "panic" in lowered or "fatal" in lowered:
             return "fatal"

@@ -100,3 +100,18 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(len(incidents), 1)
         self.assertEqual(incidents[0].count, 2)
         self.assertEqual(incidents[0].service, "paperless")
+
+    def test_reconciliation_guard_only_surfaces_after_repetition(self) -> None:
+        line = (
+            "Cash-flow sync failed (non-fatal): a successful broker reconciliation "
+            "is required before new orders"
+        )
+        first = event(line, ts=1, labels={"container": "trading_app"})
+
+        self.assertEqual(group_incidents([first], min_events=2), [])
+        incidents = group_incidents(
+            [first, event(line, ts=2, labels=first.labels)], min_events=2
+        )
+
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0].level, "warning")

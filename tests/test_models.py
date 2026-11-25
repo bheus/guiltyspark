@@ -28,6 +28,14 @@ class TestLogEventLevel:
         assert _event("kernel panic - not syncing").level == "fatal"
         assert _event("connection established").level == "info"
 
+    def test_expected_reconciliation_guard_is_non_fatal(self):
+        line = (
+            "Cash-flow sync failed (non-fatal): a successful broker reconciliation "
+            "is required before new orders"
+        )
+
+        assert _event(line).level == "warning"
+
     def test_severity_synonyms_normalize_to_known_levels(self):
         assert _event("x", level="PANIC").level == "fatal"
         assert _event("x", level="critical").level == "error"
